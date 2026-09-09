@@ -8,6 +8,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import PrismProButton from "@/components/prism-pro-button";
+
 import { loadDashboard, PRISM_API } from "../api/client";
 import type {
   PrismHumanityEntry,
@@ -112,6 +114,8 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+
+        <PrismProButton />
 
         {error && (
           <Card title="Connection error">
