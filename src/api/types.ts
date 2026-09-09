@@ -51,4 +51,52 @@ export type PrismDashboard = {
   participants: PrismParticipant[];
   work: PrismWorkEntry[];
   humanity: PrismHumanityEntry[];
+  reserved: PrismReserved;
+};
+
+export type PrismReservedUsage = {
+  ecosystem: number;
+  treasury: number;
+  team: number;
+  liquidity: number;
+};
+
+export type PrismReservedRemaining = {
+  ecosystemRemaining: number;
+  treasuryRemaining: number;
+  teamRemaining: number;
+  liquidityRemaining: number;
+  totalRemaining: number;
+};
+
+export type PrismReservedGrant = {
+  block: number;
+  id: string;
+  pool: string;
+  recipient: string;
+  amount: number;
+  nonce: number;
+  notBeforeHeight: number;
+  expiresAtHeight: number;
+  approvals: number;
+  status: string;
+};
+
+export type PrismReservedRevocation = {
+  block: number;
+  id: string;
+  pool: string;
+  grantId: string;
+  approvals: number;
+  status: string;
+};
+
+export type PrismReserved = {
+  height: number;
+  explicitUsed: number;
+  legacyGenesis: number;
+  usage: PrismReservedUsage;
+  remaining: PrismReservedRemaining;
+  grants: PrismReservedGrant[];
+  revocations: PrismReservedRevocation[];
 };

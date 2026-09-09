@@ -2,6 +2,7 @@ import type {
   PrismDashboard,
   PrismHumanityEntry,
   PrismParticipant,
+  PrismReserved,
   PrismStatus,
   PrismValidator,
   PrismWorkEntry,
@@ -40,14 +41,21 @@ export async function getJson<T>(path: string): Promise<T> {
 }
 
 export async function loadDashboard(): Promise<PrismDashboard> {
-  const [status, validatorData, participationData, workData, humanityData] =
-    await Promise.all([
-      getJson<PrismStatus>("/status"),
-      getJson<ValidatorResponse>("/validators"),
-      getJson<ParticipationResponse>("/participation"),
-      getJson<WorkResponse>("/work"),
-      getJson<HumanityResponse>("/humanity"),
-    ]);
+  const [
+    status,
+    validatorData,
+    participationData,
+    workData,
+    humanityData,
+    reserved,
+  ] = await Promise.all([
+    getJson<PrismStatus>("/status"),
+    getJson<ValidatorResponse>("/validators"),
+    getJson<ParticipationResponse>("/participation"),
+    getJson<WorkResponse>("/work"),
+    getJson<HumanityResponse>("/humanity"),
+    getJson<PrismReserved>("/reserved"),
+  ]);
 
   return {
     status,
@@ -55,5 +63,6 @@ export async function loadDashboard(): Promise<PrismDashboard> {
     participants: participationData.participants ?? [],
     work: workData.entries ?? [],
     humanity: humanityData.identities ?? [],
+    reserved,
   };
 }
