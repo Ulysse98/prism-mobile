@@ -12,6 +12,7 @@ import { loadDashboard, PRISM_API } from "../api/client";
 import type {
   PrismHumanityEntry,
   PrismParticipant,
+  PrismReserved,
   PrismStatus,
   PrismValidator,
   PrismWorkEntry,
@@ -53,6 +54,7 @@ export default function HomeScreen() {
   const [participants, setParticipants] = useState<PrismParticipant[]>([]);
   const [work, setWork] = useState<PrismWorkEntry[]>([]);
   const [humanity, setHumanity] = useState<PrismHumanityEntry[]>([]);
+  const [reserved, setReserved] = useState<PrismReserved | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -67,6 +69,7 @@ export default function HomeScreen() {
       setParticipants(dashboard.participants);
       setWork(dashboard.work);
       setHumanity(dashboard.humanity);
+      setReserved(dashboard.reserved);
       setError(null);
     } catch (err) {
       setError(
@@ -151,6 +154,102 @@ export default function HomeScreen() {
               <Text style={styles.hashLabel}>LAST HASH</Text>
               <Text style={styles.mono}>{short(status.lastHash)}</Text>
             </Card>
+
+            {reserved && (
+              <Card title="Reserved">
+                <View style={styles.metrics}>
+                  <View style={styles.metric}>
+                    <Text style={styles.metricValue}>
+                      {reserved.explicitUsed}
+                    </Text>
+                    <Text style={styles.metricLabel}>USED</Text>
+                  </View>
+
+                  <View style={styles.metric}>
+                    <Text style={styles.metricValue}>
+                      {reserved.grants.length}
+                    </Text>
+                    <Text style={styles.metricLabel}>GRANTS</Text>
+                  </View>
+
+                  <View style={styles.metric}>
+                    <Text style={styles.metricValue}>
+                      {reserved.revocations.length}
+                    </Text>
+                    <Text style={styles.metricLabel}>REVOKED</Text>
+                  </View>
+                </View>
+
+                <Row
+                  label="Legacy genesis"
+                  value={`${reserved.legacyGenesis.toLocaleString()} PRISM`}
+                />
+
+                <Row
+                  label="Remaining"
+                  value={`${reserved.remaining.totalRemaining.toLocaleString()} PRISM`}
+                />
+
+                <Row
+                  label="Ecosystem"
+                  value={`${reserved.usage.ecosystem.toLocaleString()} / ${reserved.remaining.ecosystemRemaining.toLocaleString()}`}
+                />
+
+                <Row
+                  label="Treasury"
+                  value={`${reserved.usage.treasury.toLocaleString()} / ${reserved.remaining.treasuryRemaining.toLocaleString()}`}
+                />
+
+                <Row
+                  label="Team"
+                  value={`${reserved.usage.team.toLocaleString()} / ${reserved.remaining.teamRemaining.toLocaleString()}`}
+                />
+
+                <Row
+                  label="Liquidity"
+                  value={`${reserved.usage.liquidity.toLocaleString()} / ${reserved.remaining.liquidityRemaining.toLocaleString()}`}
+                />
+
+                {reserved.grants.map((grant) => (
+                  <View key={grant.id} style={styles.entry}>
+                    <View style={styles.entryHeader}>
+                      <Text style={styles.name}>{grant.pool}</Text>
+                      <Text style={styles.good}>{grant.status}</Text>
+                    </View>
+
+                    <Text style={styles.secondary}>
+                      {grant.amount.toLocaleString()} PRISM
+                    </Text>
+
+                    <Text style={styles.secondary}>
+                      Approvals: {grant.approvals}
+                    </Text>
+
+                    <Text style={styles.mono}>{short(grant.id)}</Text>
+                  </View>
+                ))}
+
+                {reserved.revocations.map((revocation) => (
+                  <View key={revocation.id} style={styles.entry}>
+                    <View style={styles.entryHeader}>
+                      <Text style={styles.name}>{revocation.pool}</Text>
+
+                      <Text style={styles.revoked}>{revocation.status}</Text>
+                    </View>
+
+                    <Text style={styles.secondary}>
+                      Approvals: {revocation.approvals}
+                    </Text>
+
+                    <Text style={styles.secondary}>
+                      Grant {short(revocation.grantId)}
+                    </Text>
+
+                    <Text style={styles.mono}>block {revocation.block}</Text>
+                  </View>
+                ))}
+              </Card>
+            )}
 
             <Card title={`Humanity (${humanity.length})`}>
               {humanity.map((item, index) => (
@@ -373,6 +472,11 @@ const styles = StyleSheet.create({
   },
   good: {
     color: "#45e391",
+    fontWeight: "900",
+    fontSize: 11,
+  },
+  revoked: {
+    color: "#ff737e",
     fontWeight: "900",
     fontSize: 11,
   },
