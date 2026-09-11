@@ -8,10 +8,13 @@ import type {
   PrismWorkEntry,
 } from "./types";
 
-const DEFAULT_API = "http://127.0.0.1:8080/api/v1";
+const LOCAL_API = "http://127.0.0.1:8080/api/v1";
+
+const ENV_API =
+  process.env.EXPO_PUBLIC_PRISM_API_URL?.replace(/\/$/, "");
 
 export const PRISM_API =
-  process.env.EXPO_PUBLIC_PRISM_API_URL?.replace(/\/$/, "") ?? DEFAULT_API;
+  ENV_API ?? (__DEV__ ? LOCAL_API : "");
 
 type ValidatorResponse = {
   validators?: PrismValidator[];
@@ -31,6 +34,10 @@ type HumanityResponse = {
 };
 
 export async function getJson<T>(path: string): Promise<T> {
+  if (!PRISM_API) {
+    throw new Error("Prism API is not configured for this build.");
+  }
+
   const response = await fetch(`${PRISM_API}${path}`);
 
   if (!response.ok) {
