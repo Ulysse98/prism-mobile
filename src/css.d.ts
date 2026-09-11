@@ -1,4 +1,4 @@
-﻿declare module '*.css';
+declare module '*.css';
 
 declare module '*.module.css' {
   const classes: Record<string, string>;

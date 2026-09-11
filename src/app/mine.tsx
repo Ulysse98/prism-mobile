@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -57,6 +58,10 @@ async function requestJson<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
+  if (!PRISM_API) {
+    throw new Error("Prism API is not configured for this build.");
+  }
+
   const response = await fetch(`${PRISM_API}${path}`, {
     ...options,
     headers: {
@@ -84,38 +89,66 @@ function sumSquares(values: number[]) {
 }
 
 export default function MineScreen() {
-  const [network, setNetwork] = useState<NetworkStatus | null>(null);
-  const [phase, setPhase] = useState<MinerPhase>("idle");
-  const [job, setJob] = useState<MineJob | null>(null);
-  const [result, setResult] = useState<number | null>(null);
-  const [rewardedBlock, setRewardedBlock] = useState<number | null>(null);
-  const [sessionRewards, setSessionRewards] = useState(0);
-  const [sessionJobs, setSessionJobs] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [network, setNetwork] =
+    useState<NetworkStatus | null>(null);
+
+  const [phase, setPhase] =
+    useState<MinerPhase>("idle");
+
+  const [job, setJob] =
+    useState<MineJob | null>(null);
+
+  const [result, setResult] =
+    useState<number | null>(null);
+
+  const [rewardedBlock, setRewardedBlock] =
+    useState<number | null>(null);
+
+  const [sessionRewards, setSessionRewards] =
+    useState(0);
+
+  const [sessionJobs, setSessionJobs] =
+    useState(0);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
 
   const loadStatus = useCallback(async () => {
-    setRefreshing(true);
-
     try {
-      const status = await requestJson<NetworkStatus>("/status");
+      const status =
+        await requestJson<NetworkStatus>("/status");
+
       setNetwork(status);
       setError(null);
     } catch (err) {
       setNetwork(null);
+
       setError(
         err instanceof Error
           ? err.message
           : "Unable to reach Prism node",
       );
-    } finally {
-      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    void loadStatus();
+  const refreshStatus = useCallback(async () => {
+    setRefreshing(true);
+
+    try {
+      await loadStatus();
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStatus();
+    }, [loadStatus]),
+  );
 
   const connected = Boolean(network);
 
@@ -123,18 +156,25 @@ export default function MineScreen() {
     switch (phase) {
       case "starting":
         return "FETCHING WORK";
+
       case "ready":
         return "WORK READY";
+
       case "computing":
         return "COMPUTING";
+
       case "computed":
         return "PROOF READY";
+
       case "submitting":
         return "SUBMITTING";
+
       case "completed":
         return "REWARDED";
+
       case "error":
         return "ERROR";
+
       default:
         return connected ? "READY" : "OFFLINE";
     }
@@ -151,15 +191,16 @@ export default function MineScreen() {
       setResult(null);
       setRewardedBlock(null);
 
-      const response = await requestJson<MineStartResponse>(
-        "/mine/start",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            worker: "Alice",
-          }),
-        },
-      );
+      const response =
+        await requestJson<MineStartResponse>(
+          "/mine/start",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              worker: "Alice",
+            }),
+          },
+        );
 
       setJob(response.job);
       setPhase("ready");
@@ -169,6 +210,7 @@ export default function MineScreen() {
           ? err.message
           : "Unable to fetch useful work",
       );
+
       setPhase("error");
     }
   }
@@ -186,7 +228,9 @@ export default function MineScreen() {
         setTimeout(resolve, 650),
       );
 
-      const computed = sumSquares(job.input);
+      const computed =
+        sumSquares(job.input);
+
       setResult(computed);
       setPhase("computed");
     } catch (err) {
@@ -195,12 +239,17 @@ export default function MineScreen() {
           ? err.message
           : "Computation failed",
       );
+
       setPhase("error");
     }
   }
 
   async function submitProof() {
-    if (!job || result === null || phase !== "computed") {
+    if (
+      !job ||
+      result === null ||
+      phase !== "computed"
+    ) {
       return;
     }
 
@@ -208,21 +257,30 @@ export default function MineScreen() {
       setPhase("submitting");
       setError(null);
 
-      const response = await requestJson<MineSubmitResponse>(
-        "/mine/submit",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            jobId: job.id,
-            result,
-          }),
-        },
-      );
+      const response =
+        await requestJson<MineSubmitResponse>(
+          "/mine/submit",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              jobId: job.id,
+              result,
+            }),
+          },
+        );
 
       setRewardedBlock(response.block);
-      setSessionRewards((current) => current + response.reward);
-      setSessionJobs((current) => current + 1);
+
+      setSessionRewards(
+        (current) => current + response.reward,
+      );
+
+      setSessionJobs(
+        (current) => current + 1,
+      );
+
       setPhase("completed");
+
       await loadStatus();
     } catch (err) {
       setError(
@@ -230,6 +288,7 @@ export default function MineScreen() {
           ? err.message
           : "Proof submission failed",
       );
+
       setPhase("error");
     }
   }
@@ -255,7 +314,7 @@ export default function MineScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void loadStatus()}
+            onRefresh={() => void refreshStatus()}
             tintColor="#68a7ff"
             colors={["#68a7ff"]}
             progressBackgroundColor="#0b101a"
@@ -264,7 +323,10 @@ export default function MineScreen() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.logo}>MINE</Text>
+            <Text style={styles.logo}>
+              MINE
+            </Text>
+
             <Text style={styles.subtitle}>
               PROOF OF USEFUL WORK
             </Text>
@@ -273,22 +335,28 @@ export default function MineScreen() {
           <View
             style={[
               styles.liveBadge,
-              !connected && styles.offlineBadge,
+              !connected &&
+                styles.offlineBadge,
             ]}
           >
             <View
               style={[
                 styles.liveDot,
-                !connected && styles.offlineDot,
+                !connected &&
+                  styles.offlineDot,
               ]}
             />
+
             <Text
               style={[
                 styles.liveText,
-                !connected && styles.offlineText,
+                !connected &&
+                  styles.offlineText,
               ]}
             >
-              {connected ? "LIVE" : "OFFLINE"}
+              {connected
+                ? "LIVE"
+                : "OFFLINE"}
             </Text>
           </View>
         </View>
@@ -299,6 +367,7 @@ export default function MineScreen() {
               <Text style={styles.eyebrow}>
                 MINING STATUS
               </Text>
+
               <Text style={styles.statusTitle}>
                 {phaseLabel}
               </Text>
@@ -307,7 +376,8 @@ export default function MineScreen() {
             <View
               style={[
                 styles.statusOrb,
-                phase === "completed" && styles.statusOrbRewarded,
+                phase === "completed" &&
+                  styles.statusOrbRewarded,
               ]}
             >
               {busy ? (
@@ -323,7 +393,9 @@ export default function MineScreen() {
                       styles.statusOrbTextRewarded,
                   ]}
                 >
-                  {phase === "completed" ? "✓" : "⚡"}
+                  {phase === "completed"
+                    ? "✓"
+                    : "⚡"}
                 </Text>
               )}
             </View>
@@ -334,16 +406,21 @@ export default function MineScreen() {
               <View
                 style={[
                   styles.readinessDot,
-                  !connected && styles.readinessDotOff,
+                  !connected &&
+                    styles.readinessDotOff,
                 ]}
               />
+
               <Text style={styles.readinessText}>
                 NODE CONNECTED
               </Text>
             </View>
 
             <View style={styles.readinessItem}>
-              <View style={styles.readinessDot} />
+              <View
+                style={styles.readinessDot}
+              />
+
               <Text style={styles.readinessText}>
                 HUMANITY VERIFIED
               </Text>
@@ -355,8 +432,10 @@ export default function MineScreen() {
               <Text style={styles.networkName}>
                 {network.network}
               </Text>
+
               <Text style={styles.networkMeta}>
-                HEIGHT {network.height} · {network.version}
+                HEIGHT {network.height} ·{" "}
+                {network.version}
               </Text>
             </View>
           )}
@@ -383,6 +462,7 @@ export default function MineScreen() {
                 <Text style={styles.previewValue}>
                   AUTO
                 </Text>
+
                 <Text style={styles.previewLabel}>
                   TASK
                 </Text>
@@ -392,6 +472,7 @@ export default function MineScreen() {
                 <Text style={styles.previewValue}>
                   LOW
                 </Text>
+
                 <Text style={styles.previewLabel}>
                   DIFFICULTY
                 </Text>
@@ -401,6 +482,7 @@ export default function MineScreen() {
                 <Text style={styles.rewardValue}>
                   2
                 </Text>
+
                 <Text style={styles.previewLabel}>
                   PRISM
                 </Text>
@@ -412,15 +494,25 @@ export default function MineScreen() {
               disabled={!connected || busy}
               style={({ pressed }) => [
                 styles.primaryButton,
+
                 (!connected || busy) &&
                   styles.primaryButtonDisabled,
-                pressed && connected && styles.buttonPressed,
+
+                pressed &&
+                  connected &&
+                  styles.buttonPressed,
               ]}
             >
               {phase === "starting" ? (
-                <ActivityIndicator color="#05070c" />
+                <ActivityIndicator
+                  color="#05070c"
+                />
               ) : (
-                <Text style={styles.primaryButtonText}>
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
                   START WORK →
                 </Text>
               )}
@@ -435,16 +527,28 @@ export default function MineScreen() {
                 <Text style={styles.eyebrow}>
                   ACTIVE JOB
                 </Text>
+
                 <Text style={styles.workTitle}>
                   {job.task}
                 </Text>
               </View>
 
-              <View style={styles.jobRewardBadge}>
-                <Text style={styles.jobRewardValue}>
+              <View
+                style={styles.jobRewardBadge}
+              >
+                <Text
+                  style={
+                    styles.jobRewardValue
+                  }
+                >
                   {job.reward}
                 </Text>
-                <Text style={styles.jobRewardLabel}>
+
+                <Text
+                  style={
+                    styles.jobRewardLabel
+                  }
+                >
                   PRISM
                 </Text>
               </View>
@@ -458,6 +562,7 @@ export default function MineScreen() {
               <Text style={styles.inputLabel}>
                 INPUT
               </Text>
+
               <Text style={styles.inputValue}>
                 [{job.input.join(", ")}]
               </Text>
@@ -465,28 +570,43 @@ export default function MineScreen() {
 
             <View style={styles.jobStats}>
               <View style={styles.jobStat}>
-                <Text style={styles.jobStatValue}>
+                <Text
+                  style={styles.jobStatValue}
+                >
                   {job.difficulty}
                 </Text>
-                <Text style={styles.jobStatLabel}>
+
+                <Text
+                  style={styles.jobStatLabel}
+                >
                   DIFFICULTY
                 </Text>
               </View>
 
               <View style={styles.jobStat}>
-                <Text style={styles.jobStatValue}>
+                <Text
+                  style={styles.jobStatValue}
+                >
                   {job.input.length}
                 </Text>
-                <Text style={styles.jobStatLabel}>
+
+                <Text
+                  style={styles.jobStatLabel}
+                >
                   WORK UNITS
                 </Text>
               </View>
 
               <View style={styles.jobStat}>
-                <Text style={styles.jobStatValue}>
+                <Text
+                  style={styles.jobStatValue}
+                >
                   {result ?? "—"}
                 </Text>
-                <Text style={styles.jobStatLabel}>
+
+                <Text
+                  style={styles.jobStatLabel}
+                >
                   RESULT
                 </Text>
               </View>
@@ -494,81 +614,152 @@ export default function MineScreen() {
 
             {phase === "ready" && (
               <Pressable
-                onPress={() => void runCompute()}
+                onPress={() =>
+                  void runCompute()
+                }
                 style={({ pressed }) => [
                   styles.primaryButton,
-                  pressed && styles.buttonPressed,
+                  pressed &&
+                    styles.buttonPressed,
                 ]}
               >
-                <Text style={styles.primaryButtonText}>
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
                   RUN COMPUTE →
                 </Text>
               </Pressable>
             )}
 
             {phase === "computing" && (
-              <View style={styles.computingPanel}>
+              <View
+                style={
+                  styles.computingPanel
+                }
+              >
                 <ActivityIndicator
                   color="#68a7ff"
                   size="small"
                 />
-                <Text style={styles.computingText}>
-                  Computing sum of squares on device…
+
+                <Text
+                  style={
+                    styles.computingText
+                  }
+                >
+                  Computing sum of squares
+                  on device…
                 </Text>
               </View>
             )}
 
-            {phase === "computed" && result !== null && (
-              <>
-                <View style={styles.proofReady}>
-                  <View style={styles.proofReadyDot} />
-                  <View>
-                    <Text style={styles.proofReadyTitle}>
-                      PROOF READY
-                    </Text>
-                    <Text style={styles.proofReadyText}>
-                      Result {result} is ready for node verification.
-                    </Text>
-                  </View>
-                </View>
+            {phase === "computed" &&
+              result !== null && (
+                <>
+                  <View
+                    style={styles.proofReady}
+                  >
+                    <View
+                      style={
+                        styles.proofReadyDot
+                      }
+                    />
 
-                <Pressable
-                  onPress={() => void submitProof()}
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    pressed && styles.buttonPressed,
-                  ]}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    SUBMIT PROOF →
-                  </Text>
-                </Pressable>
-              </>
-            )}
+                    <View>
+                      <Text
+                        style={
+                          styles.proofReadyTitle
+                        }
+                      >
+                        PROOF READY
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.proofReadyText
+                        }
+                      >
+                        Result {result} is ready
+                        for node verification.
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    onPress={() =>
+                      void submitProof()
+                    }
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      pressed &&
+                        styles.buttonPressed,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.primaryButtonText
+                      }
+                    >
+                      SUBMIT PROOF →
+                    </Text>
+                  </Pressable>
+                </>
+              )}
 
             {phase === "submitting" && (
-              <View style={styles.computingPanel}>
+              <View
+                style={
+                  styles.computingPanel
+                }
+              >
                 <ActivityIndicator
                   color="#68a7ff"
                   size="small"
                 />
-                <Text style={styles.computingText}>
-                  Verifying proof on Prism node…
+
+                <Text
+                  style={
+                    styles.computingText
+                  }
+                >
+                  Verifying proof on Prism
+                  node…
                 </Text>
               </View>
             )}
 
             {phase === "completed" && (
               <>
-                <View style={styles.rewardPanel}>
-                  <Text style={styles.rewardEyebrow}>
+                <View
+                  style={
+                    styles.rewardPanel
+                  }
+                >
+                  <Text
+                    style={
+                      styles.rewardEyebrow
+                    }
+                  >
                     WORK VERIFIED
                   </Text>
-                  <Text style={styles.rewardTitle}>
+
+                  <Text
+                    style={
+                      styles.rewardTitle
+                    }
+                  >
                     +{job.reward} PRISM
                   </Text>
-                  <Text style={styles.rewardText}>
-                    Proof included in block {rewardedBlock ?? "—"}.
+
+                  <Text
+                    style={
+                      styles.rewardText
+                    }
+                  >
+                    Proof included in block{" "}
+                    {rewardedBlock ?? "—"}.
                   </Text>
                 </View>
 
@@ -576,10 +767,15 @@ export default function MineScreen() {
                   onPress={resetMiner}
                   style={({ pressed }) => [
                     styles.secondaryButton,
-                    pressed && styles.buttonPressed,
+                    pressed &&
+                      styles.buttonPressed,
                   ]}
                 >
-                  <Text style={styles.secondaryButtonText}>
+                  <Text
+                    style={
+                      styles.secondaryButtonText
+                    }
+                  >
                     MINE NEXT JOB
                   </Text>
                 </Pressable>
@@ -589,9 +785,15 @@ export default function MineScreen() {
             {phase === "error" && (
               <Pressable
                 onPress={resetMiner}
-                style={styles.secondaryButton}
+                style={
+                  styles.secondaryButton
+                }
               >
-                <Text style={styles.secondaryButtonText}>
+                <Text
+                  style={
+                    styles.secondaryButtonText
+                  }
+                >
                   RESET MINER
                 </Text>
               </Pressable>
@@ -604,7 +806,10 @@ export default function MineScreen() {
             <Text style={styles.errorTitle}>
               MINER ERROR
             </Text>
-            <Text style={styles.errorText}>{error}</Text>
+
+            <Text style={styles.errorText}>
+              {error}
+            </Text>
           </View>
         )}
 
@@ -612,34 +817,62 @@ export default function MineScreen() {
           <Text style={styles.eyebrow}>
             SESSION
           </Text>
+
           <Text style={styles.sessionTitle}>
             Mining activity
           </Text>
 
           <View style={styles.sessionStats}>
             <View style={styles.sessionStat}>
-              <Text style={styles.sessionStatValue}>
+              <Text
+                style={
+                  styles.sessionStatValue
+                }
+              >
                 {sessionJobs}
               </Text>
-              <Text style={styles.sessionStatLabel}>
+
+              <Text
+                style={
+                  styles.sessionStatLabel
+                }
+              >
                 JOBS
               </Text>
             </View>
 
             <View style={styles.sessionStat}>
-              <Text style={styles.sessionRewardValue}>
+              <Text
+                style={
+                  styles.sessionRewardValue
+                }
+              >
                 {sessionRewards}
               </Text>
-              <Text style={styles.sessionStatLabel}>
+
+              <Text
+                style={
+                  styles.sessionStatLabel
+                }
+              >
                 PRISM EARNED
               </Text>
             </View>
 
             <View style={styles.sessionStat}>
-              <Text style={styles.sessionStatValue}>
+              <Text
+                style={
+                  styles.sessionStatValue
+                }
+              >
                 {network?.blocks ?? 0}
               </Text>
-              <Text style={styles.sessionStatLabel}>
+
+              <Text
+                style={
+                  styles.sessionStatLabel
+                }
+              >
                 NETWORK BLOCKS
               </Text>
             </View>
@@ -931,7 +1164,11 @@ const styles = StyleSheet.create({
 
   buttonPressed: {
     opacity: 0.8,
-    transform: [{ scale: 0.99 }],
+    transform: [
+      {
+        scale: 0.99,
+      },
+    ],
   },
 
   jobHeader: {

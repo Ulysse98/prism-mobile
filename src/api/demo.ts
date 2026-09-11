@@ -1,4 +1,4 @@
-﻿import type { PrismDashboard } from "./types";
+import type { PrismDashboard } from "./types";
 
 export const DEMO_DASHBOARD = {
   status: {
