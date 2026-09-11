@@ -1,7 +1,8 @@
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -115,6 +116,9 @@ export default function MineScreen() {
 
   const [refreshing, setRefreshing] =
     useState(false);
+
+  const [orbPulse] =
+    useState(() => new Animated.Value(0));
 
   const loadStatus = useCallback(async () => {
     try {
@@ -306,6 +310,50 @@ export default function MineScreen() {
     phase === "computing" ||
     phase === "submitting";
 
+  useEffect(() => {
+    if (!busy) {
+      orbPulse.stopAnimation();
+      orbPulse.setValue(0);
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(orbPulse, {
+          toValue: 1,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+        Animated.timing(orbPulse, {
+          toValue: 0,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [busy, orbPulse]);
+
+  const orbAnimatedStyle = {
+    opacity: orbPulse.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 0.68],
+    }),
+    transform: [
+      {
+        scale: orbPulse.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 1.08],
+        }),
+      },
+    ],
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView
@@ -373,11 +421,12 @@ export default function MineScreen() {
               </Text>
             </View>
 
-            <View
+            <Animated.View
               style={[
                 styles.statusOrb,
                 phase === "completed" &&
                   styles.statusOrbRewarded,
+                busy && orbAnimatedStyle,
               ]}
             >
               {busy ? (
@@ -398,7 +447,7 @@ export default function MineScreen() {
                     : "⚡"}
                 </Text>
               )}
-            </View>
+            </Animated.View>
           </View>
 
           <View style={styles.readinessRow}>
