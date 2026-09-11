@@ -120,6 +120,9 @@ export default function MineScreen() {
   const [orbPulse] =
     useState(() => new Animated.Value(0));
 
+  const [rewardPop] =
+    useState(() => new Animated.Value(0));
+
   const loadStatus = useCallback(async () => {
     try {
       const status =
@@ -349,6 +352,65 @@ export default function MineScreen() {
         scale: orbPulse.interpolate({
           inputRange: [0, 1],
           outputRange: [1, 1.08],
+        }),
+      },
+    ],
+  };
+
+
+  useEffect(() => {
+    if (phase !== "completed") {
+      rewardPop.stopAnimation();
+      rewardPop.setValue(0);
+      return;
+    }
+
+    rewardPop.setValue(0);
+
+    const animation = Animated.sequence([
+      Animated.timing(rewardPop, {
+        toValue: 0.72,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(rewardPop, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [phase, rewardPop]);
+
+  const rewardPanelAnimatedStyle = {
+    opacity: rewardPop,
+    transform: [
+      {
+        translateY: rewardPop.interpolate({
+          inputRange: [0, 1],
+          outputRange: [12, 0],
+        }),
+      },
+      {
+        scale: rewardPop.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.96, 1],
+        }),
+      },
+    ],
+  };
+
+  const sessionRewardAnimatedStyle = {
+    transform: [
+      {
+        scale: rewardPop.interpolate({
+          inputRange: [0, 0.72, 1],
+          outputRange: [1, 1.08, 1],
         }),
       },
     ],
@@ -781,10 +843,11 @@ export default function MineScreen() {
 
             {phase === "completed" && (
               <>
-                <View
-                  style={
-                    styles.rewardPanel
-                  }
+                <Animated.View
+                  style={[
+                    styles.rewardPanel,
+                    rewardPanelAnimatedStyle,
+                  ]}
                 >
                   <Text
                     style={
@@ -810,7 +873,7 @@ export default function MineScreen() {
                     Proof included in block{" "}
                     {rewardedBlock ?? "—"}.
                   </Text>
-                </View>
+                </Animated.View>
 
                 <Pressable
                   onPress={resetMiner}
@@ -890,7 +953,13 @@ export default function MineScreen() {
               </Text>
             </View>
 
-            <View style={styles.sessionStat}>
+            <Animated.View
+              style={[
+                styles.sessionStat,
+                phase === "completed" &&
+                  sessionRewardAnimatedStyle,
+              ]}
+            >
               <Text
                 style={
                   styles.sessionRewardValue
@@ -906,7 +975,7 @@ export default function MineScreen() {
               >
                 PRISM EARNED
               </Text>
-            </View>
+            </Animated.View>
 
             <View style={styles.sessionStat}>
               <Text
