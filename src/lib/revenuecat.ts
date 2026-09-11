@@ -2,17 +2,23 @@ import { Platform } from 'react-native';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 
 const googleApiKey =
-  process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY;
+  process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY?.trim();
+
+const testApiKey =
+  process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY?.trim();
 
 export async function configureRevenueCat() {
-  // Shipaton build is Android-first.
   if (Platform.OS !== 'android') {
     return;
   }
 
-  if (!googleApiKey) {
+  const apiKey = __DEV__ ? testApiKey : googleApiKey;
+
+  if (!apiKey) {
     console.warn(
-      '[RevenueCat] EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY is not configured.'
+      `[RevenueCat] Missing ${
+        __DEV__ ? 'Test Store' : 'Google Play'
+      } API key.`
     );
     return;
   }
@@ -28,8 +34,12 @@ export async function configureRevenueCat() {
   }
 
   Purchases.configure({
-    apiKey: googleApiKey,
+    apiKey,
   });
 
-  console.log('[RevenueCat] SDK configured');
+  console.log(
+    `[RevenueCat] SDK configured with ${
+      __DEV__ ? 'Test Store' : 'Google Play'
+    }.`
+  );
 }

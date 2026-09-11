@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -7,21 +7,21 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import Purchases from 'react-native-purchases';
-import RevenueCatUI from 'react-native-purchases-ui';
+} from "react-native";
+import Purchases from "react-native-purchases";
+import RevenueCatUI from "react-native-purchases-ui";
 
-import { configureRevenueCat } from '@/lib/revenuecat';
+import { configureRevenueCat } from "@/lib/revenuecat";
 
-const PRO_ENTITLEMENT = 'pro';
-const PRO_OFFERING = 'default';
+const PRO_ENTITLEMENT = "pro";
+const PRO_OFFERING = "default";
 
 export default function PrismProButton() {
   const [isPro, setIsPro] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function refreshProStatus() {
-    if (Platform.OS !== 'android') {
+    if (Platform.OS !== "android") {
       return;
     }
 
@@ -36,14 +36,19 @@ export default function PrismProButton() {
     const customerInfo = await Purchases.getCustomerInfo();
 
     setIsPro(
-      Boolean(customerInfo.entitlements.active[PRO_ENTITLEMENT])
+      Boolean(
+        customerInfo.entitlements.active[PRO_ENTITLEMENT],
+      ),
     );
   }
 
   useEffect(() => {
     const timer = setTimeout(() => {
       refreshProStatus().catch((error) => {
-        console.warn('[RevenueCat] Unable to read Pro status:', error);
+        console.warn(
+          "[RevenueCat] Unable to read Pro status:",
+          error,
+        );
       });
     }, 0);
 
@@ -64,8 +69,8 @@ export default function PrismProButton() {
 
       if (!configured) {
         Alert.alert(
-          'Prism Pro',
-          'RevenueCat is not configured for this build.'
+          "Prism Pro",
+          "RevenueCat is not configured for this build.",
         );
         return;
       }
@@ -77,8 +82,8 @@ export default function PrismProButton() {
 
       if (!offering) {
         Alert.alert(
-          'Prism Pro',
-          'The Prism Pro offering is not available yet.'
+          "Prism Pro",
+          "The Prism Pro offering is not available yet.",
         );
         return;
       }
@@ -88,28 +93,34 @@ export default function PrismProButton() {
         requiredEntitlementIdentifier: PRO_ENTITLEMENT,
       });
 
-      const customerInfo = await Purchases.getCustomerInfo();
+      const customerInfo =
+        await Purchases.getCustomerInfo();
 
       const unlocked = Boolean(
-        customerInfo.entitlements.active[PRO_ENTITLEMENT]
+        customerInfo.entitlements.active[
+          PRO_ENTITLEMENT
+        ],
       );
 
       setIsPro(unlocked);
 
       if (unlocked) {
         Alert.alert(
-          'Prism Pro unlocked',
-          'Advanced Prism features are now available.'
+          "Prism Pro unlocked",
+          "Advanced Prism features are now available.",
         );
       }
     } catch (error) {
-      console.error('[RevenueCat] Prism Pro error:', error);
+      console.error(
+        "[RevenueCat] Prism Pro error:",
+        error,
+      );
 
       Alert.alert(
-        'Prism Pro',
+        "Prism Pro",
         error instanceof Error
           ? error.message
-          : 'Unable to open Prism Pro.'
+          : "Unable to open Prism Pro.",
       );
     } finally {
       setLoading(false);
@@ -121,72 +132,166 @@ export default function PrismProButton() {
       onPress={() => void openPrismPro()}
       disabled={loading || isPro}
       style={({ pressed }) => [
-        styles.button,
-        isPro && styles.buttonActive,
-        pressed && !isPro && styles.buttonPressed,
+        styles.container,
+        isPro && styles.containerActive,
+        pressed && !isPro && styles.pressed,
       ]}
     >
-      <View>
+      <View style={styles.left}>
+        <View style={styles.topLine}>
+          <Text style={styles.brand}>
+            PRISM PRO
+          </Text>
+
+          <View
+            style={[
+              styles.badge,
+              isPro && styles.badgeActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.badgeText,
+                isPro && styles.badgeTextActive,
+              ]}
+            >
+              {isPro ? "ACTIVE" : "PRO"}
+            </Text>
+          </View>
+        </View>
+
         <Text style={styles.title}>
-          {isPro ? 'PRISM PRO ACTIVE' : 'PRISM PRO'}
+          {isPro
+            ? "Advanced analytics unlocked"
+            : "Advanced analytics"}
         </Text>
 
         <Text style={styles.subtitle}>
           {isPro
-            ? 'Advanced network access unlocked'
-            : 'Advanced analytics · 7-day free trial'}
+            ? "Premium Prism features enabled"
+            : "7-day free trial · Test Store"}
         </Text>
       </View>
 
-      {loading ? (
-        <ActivityIndicator />
-      ) : (
-        <Text style={styles.action}>
-          {isPro ? '✓' : 'OPEN →'}
-        </Text>
-      )}
+      <View style={styles.action}>
+        {loading ? (
+          <ActivityIndicator
+            size="small"
+            color="#9aa9ff"
+          />
+        ) : (
+          <Text
+            style={[
+              styles.actionText,
+              isPro && styles.actionTextActive,
+            ]}
+          >
+            {isPro ? "✓" : "OPEN →"}
+          </Text>
+        )}
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
-    backgroundColor: '#10182a',
+  container: {
+    minHeight: 92,
+    backgroundColor: "#0d1321",
     borderWidth: 1,
-    borderColor: '#6f64ff',
-    borderRadius: 16,
-    paddingHorizontal: 16,
+    borderColor: "#3d3c77",
+    borderRadius: 18,
+    paddingHorizontal: 17,
     paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
   },
 
-  buttonActive: {
-    borderColor: '#45e391',
-    backgroundColor: '#0b281b',
+  containerActive: {
+    backgroundColor: "#0b1d17",
+    borderColor: "#245f46",
   },
 
-  buttonPressed: {
-    opacity: 0.8,
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
+  },
+
+  left: {
+    flex: 1,
+  },
+
+  topLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+
+  brand: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.6,
+  },
+
+  badge: {
+    backgroundColor: "#191c3d",
+    borderWidth: 1,
+    borderColor: "#44488a",
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+
+  badgeActive: {
+    backgroundColor: "#0d2a1d",
+    borderColor: "#266344",
+  },
+
+  badgeText: {
+    color: "#a9afff",
+    fontSize: 7,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+
+  badgeTextActive: {
+    color: "#72e8a8",
   },
 
   title: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 1.5,
+    color: "#e8ebf4",
+    fontSize: 15,
+    fontWeight: "800",
   },
 
   subtitle: {
-    color: '#8190a6',
-    fontSize: 11,
+    color: "#728097",
+    fontSize: 10,
     marginTop: 4,
   },
 
   action: {
-    color: '#8ea7ff',
-    fontSize: 12,
-    fontWeight: '900',
+    minWidth: 70,
+    minHeight: 38,
+    borderRadius: 12,
+    backgroundColor: "#151a30",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+
+  actionText: {
+    color: "#9aa9ff",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+
+  actionTextActive: {
+    color: "#72e8a8",
   },
 });
