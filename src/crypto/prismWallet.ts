@@ -1,4 +1,5 @@
 ﻿import * as Crypto from "expo-crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
 import * as SecureStore from "expo-secure-store";
 import nacl from "tweetnacl";
 
@@ -97,19 +98,7 @@ function asciiBytes(
 async function sha256Bytes(
   bytes: Uint8Array,
 ): Promise<Uint8Array> {
-  const input = new Uint8Array(
-    bytes.length,
-  );
-
-  input.set(bytes);
-
-  const digest =
-    await Crypto.digest(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      input.buffer,
-    );
-
-  return new Uint8Array(digest);
+  return sha256(bytes);
 }
 
 async function sha256AsciiHex(
