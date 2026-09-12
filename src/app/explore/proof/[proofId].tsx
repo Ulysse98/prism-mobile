@@ -19,7 +19,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { loadDashboard } from "@/api/client";
-import { DEMO_DASHBOARD } from "@/api/demo";
 
 import type {
     PrismStatus,
@@ -29,7 +28,7 @@ import type {
 type ScreenMode =
   | "loading"
   | "live"
-  | "demo"
+  | "offline"
   | "not-found";
 
 function formatTask(value: string) {
@@ -154,16 +153,8 @@ export default function ProofDetailScreen() {
           err,
         );
 
-        const demoEntry =
-          DEMO_DASHBOARD.work.find(
-            (item) =>
-              item.proofId ===
-              proofId,
-          ) ?? null;
-
-        setStatus(
-          DEMO_DASHBOARD.status,
-        );
+        setProof(null);
+        setStatus(null);
 
         setError(
           err instanceof Error
@@ -171,13 +162,7 @@ export default function ProofDetailScreen() {
             : "Unable to reach Prism Devnet",
         );
 
-        if (!demoEntry) {
-          setProof(null);
-          setMode("not-found");
-        } else {
-          setProof(demoEntry);
-          setMode("demo");
-        }
+        setMode("offline");
       } finally {
         setRefreshing(false);
       }
@@ -339,27 +324,27 @@ export default function ProofDetailScreen() {
           <View
             style={[
               styles.modeBadge,
-              mode === "demo" &&
-                styles.modeBadgeDemo,
+              mode === "offline" &&
+                styles.modeBadgeOffline,
             ]}
           >
             <View
               style={[
                 styles.modeDot,
-                mode === "demo" &&
-                  styles.modeDotDemo,
+                mode === "offline" &&
+                  styles.modeDotOffline,
               ]}
             />
 
             <Text
               style={[
                 styles.modeText,
-                mode === "demo" &&
-                  styles.modeTextDemo,
+                mode === "offline" &&
+                  styles.modeTextOffline,
               ]}
             >
-              {mode === "demo"
-                ? "DEMO"
+              {mode === "offline"
+                ? "OFFLINE"
                 : "LIVE"}
             </Text>
           </View>
@@ -702,7 +687,7 @@ export default function ProofDetailScreen() {
           </View>
         </View>
 
-        {mode === "demo" &&
+        {mode === "offline" &&
         error ? (
           <View
             style={
@@ -714,7 +699,7 @@ export default function ProofDetailScreen() {
                 styles.warningTitle
               }
             >
-              DEMO DATA
+              NODE OFFLINE
             </Text>
 
             <Text
@@ -722,10 +707,10 @@ export default function ProofDetailScreen() {
                 styles.warningText
               }
             >
-              Live Prism Devnet was
-              unavailable. This proof
-              was loaded from bundled
-              demo data.
+              Live Prism Devnet is
+              unavailable. Proof data
+              cannot be loaded until
+              the node reconnects.
             </Text>
           </View>
         ) : null}
@@ -844,7 +829,7 @@ const styles =
       borderColor: "#16452f",
     },
 
-    modeBadgeDemo: {
+    modeBadgeOffline: {
       backgroundColor: "#2b2310",
       borderColor: "#594717",
     },
@@ -856,7 +841,7 @@ const styles =
       backgroundColor: "#45e391",
     },
 
-    modeDotDemo: {
+    modeDotOffline: {
       backgroundColor: "#e1bc68",
     },
 
@@ -867,7 +852,7 @@ const styles =
       letterSpacing: 1,
     },
 
-    modeTextDemo: {
+    modeTextOffline: {
       color: "#e1bc68",
     },
 

@@ -16,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import PrismProButton from "@/components/prism-pro-button";
 
 import { loadDashboard } from "../api/client";
-import { DEMO_DASHBOARD } from "../api/demo";
 
 import type {
   PrismHumanityEntry,
@@ -30,7 +29,7 @@ import type {
 type ConnectionMode =
   | "connecting"
   | "live"
-  | "demo";
+  | "offline";
 
 function formatNumber(value: number) {
   return value.toLocaleString();
@@ -62,16 +61,16 @@ function StatusBadge({
   const text =
     mode === "live"
       ? "LIVE"
-      : mode === "demo"
-        ? "DEMO"
+      : mode === "offline"
+        ? "OFFLINE"
         : "SYNCING";
 
   return (
     <View
       style={[
         styles.statusBadge,
-        mode === "demo" &&
-          styles.statusBadgeDemo,
+        mode === "offline" &&
+          styles.statusBadgeOffline,
         mode === "connecting" &&
           styles.statusBadgeConnecting,
       ]}
@@ -79,8 +78,8 @@ function StatusBadge({
       <View
         style={[
           styles.statusDot,
-          mode === "demo" &&
-            styles.statusDotDemo,
+          mode === "offline" &&
+            styles.statusDotOffline,
           mode === "connecting" &&
             styles.statusDotConnecting,
         ]}
@@ -89,8 +88,8 @@ function StatusBadge({
       <Text
         style={[
           styles.statusText,
-          mode === "demo" &&
-            styles.statusTextDemo,
+          mode === "offline" &&
+            styles.statusTextOffline,
           mode === "connecting" &&
             styles.statusTextConnecting,
         ]}
@@ -212,29 +211,12 @@ export default function HomeScreen() {
           err,
         );
 
-        setStatus(
-          DEMO_DASHBOARD.status,
-        );
-
-        setValidators(
-          DEMO_DASHBOARD.validators,
-        );
-
-        setParticipants(
-          DEMO_DASHBOARD.participants,
-        );
-
-        setWork(
-          DEMO_DASHBOARD.work,
-        );
-
-        setHumanity(
-          DEMO_DASHBOARD.humanity,
-        );
-
-        setReserved(
-          DEMO_DASHBOARD.reserved,
-        );
+        setStatus(null);
+        setValidators([]);
+        setParticipants([]);
+        setWork([]);
+        setHumanity([]);
+        setReserved(null);
 
         setError(
           err instanceof Error
@@ -242,7 +224,7 @@ export default function HomeScreen() {
             : "Unable to reach Prism API",
         );
 
-        setMode("demo");
+        setMode("offline");
       } finally {
         setRefreshing(false);
       }
@@ -378,34 +360,34 @@ export default function HomeScreen() {
 
         <PrismProButton />
 
-        {mode === "demo" && (
+        {mode === "offline" && (
           <View
             style={
-              styles.demoCard
+              styles.offlineCard
             }
           >
             <Text
               style={
-                styles.demoTitle
+                styles.offlineTitle
               }
             >
-              DEMO MODE
+              NODE OFFLINE
             </Text>
 
             <Text
               style={
-                styles.demoText
+                styles.offlineText
               }
             >
               Prism Devnet could not
               be reached. Showing
-              bundled demo data.
+              no cached or sample data.
             </Text>
 
             {error && (
               <Text
                 style={
-                  styles.demoError
+                  styles.offlineError
                 }
               >
                 {error}
@@ -1539,7 +1521,7 @@ const styles =
       paddingVertical: 7,
     },
 
-    statusBadgeDemo: {
+    statusBadgeOffline: {
       backgroundColor: "#2b2310",
       borderColor: "#594717",
     },
@@ -1556,7 +1538,7 @@ const styles =
       backgroundColor: "#45e391",
     },
 
-    statusDotDemo: {
+    statusDotOffline: {
       backgroundColor: "#e1bc68",
     },
 
@@ -1571,7 +1553,7 @@ const styles =
       letterSpacing: 1,
     },
 
-    statusTextDemo: {
+    statusTextOffline: {
       color: "#e1bc68",
     },
 
@@ -1579,7 +1561,7 @@ const styles =
       color: "#68a7ff",
     },
 
-    demoCard: {
+    offlineCard: {
       padding: 15,
       borderRadius: 15,
       backgroundColor: "#211c0e",
@@ -1587,21 +1569,21 @@ const styles =
       borderColor: "#4d4020",
     },
 
-    demoTitle: {
+    offlineTitle: {
       color: "#e1bc68",
       fontSize: 10,
       fontWeight: "900",
       letterSpacing: 1.3,
     },
 
-    demoText: {
+    offlineText: {
       color: "#9a8b65",
       fontSize: 11,
       lineHeight: 17,
       marginTop: 6,
     },
 
-    demoError: {
+    offlineError: {
       color: "#756b52",
       fontSize: 9,
       marginTop: 7,

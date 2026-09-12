@@ -18,7 +18,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { loadDashboard } from "@/api/client";
-import { DEMO_DASHBOARD } from "@/api/demo";
 
 type Dashboard =
   Awaited<ReturnType<typeof loadDashboard>>;
@@ -26,7 +25,7 @@ type Dashboard =
 type ConnectionMode =
   | "connecting"
   | "live"
-  | "demo";
+  | "offline";
 
 type ActivityItem =
   | {
@@ -77,16 +76,16 @@ function StatusPill({
   const label =
     mode === "live"
       ? "LIVE"
-      : mode === "demo"
-        ? "DEMO"
+      : mode === "offline"
+        ? "OFFLINE"
         : "SYNCING";
 
   return (
     <View
       style={[
         styles.statusPill,
-        mode === "demo" &&
-          styles.statusPillDemo,
+        mode === "offline" &&
+          styles.statusPillOffline,
         mode === "connecting" &&
           styles.statusPillSyncing,
       ]}
@@ -94,8 +93,8 @@ function StatusPill({
       <View
         style={[
           styles.statusDot,
-          mode === "demo" &&
-            styles.statusDotDemo,
+          mode === "offline" &&
+            styles.statusDotOffline,
           mode === "connecting" &&
             styles.statusDotSyncing,
         ]}
@@ -104,8 +103,8 @@ function StatusPill({
       <Text
         style={[
           styles.statusPillText,
-          mode === "demo" &&
-            styles.statusPillTextDemo,
+          mode === "offline" &&
+            styles.statusPillTextOffline,
           mode === "connecting" &&
             styles.statusPillTextSyncing,
         ]}
@@ -227,11 +226,8 @@ export default function ExploreScreen() {
           error,
         );
 
-        setDashboard(
-          DEMO_DASHBOARD as Dashboard,
-        );
-
-        setMode("demo");
+        setDashboard(null);
+        setMode("offline");
       } finally {
         setRefreshing(false);
       }
@@ -1493,30 +1489,29 @@ export default function ExploreScreen() {
           </View>
         </View>
 
-        {mode === "demo" ? (
+        {mode === "offline" ? (
           <View
             style={
-              styles.demoWarning
+              styles.offlineWarning
             }
           >
             <Text
               style={
-                styles.demoWarningTitle
+                styles.offlineWarningTitle
               }
             >
-              DEMO MODE
+              NODE OFFLINE
             </Text>
 
             <Text
               style={
-                styles.demoWarningText
+                styles.offlineWarningText
               }
             >
               Prism Devnet is currently
-              unavailable. Explore is
-              displaying bundled demo
-              data until the node
-              reconnects.
+              unavailable. No cached or
+              sample data is displayed
+              until the node reconnects.
             </Text>
           </View>
         ) : null}
@@ -1590,7 +1585,7 @@ const styles =
       borderColor: "#16452f",
     },
 
-    statusPillDemo: {
+    statusPillOffline: {
       backgroundColor: "#2b2310",
       borderColor: "#594717",
     },
@@ -1607,7 +1602,7 @@ const styles =
       backgroundColor: "#45e391",
     },
 
-    statusDotDemo: {
+    statusDotOffline: {
       backgroundColor: "#e1bc68",
     },
 
@@ -1622,7 +1617,7 @@ const styles =
       letterSpacing: 1,
     },
 
-    statusPillTextDemo: {
+    statusPillTextOffline: {
       color: "#e1bc68",
     },
 
@@ -2309,7 +2304,7 @@ const styles =
       marginTop: 3,
     },
 
-    demoWarning: {
+    offlineWarning: {
       padding: 15,
       borderRadius: 15,
       backgroundColor: "#211c0e",
@@ -2317,14 +2312,14 @@ const styles =
       borderColor: "#4d4020",
     },
 
-    demoWarningTitle: {
+    offlineWarningTitle: {
       color: "#e1bc68",
       fontSize: 9,
       fontWeight: "900",
       letterSpacing: 1.1,
     },
 
-    demoWarningText: {
+    offlineWarningText: {
       color: "#9a8b65",
       fontSize: 10,
       lineHeight: 16,
