@@ -19,6 +19,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PRISM_API } from "../api/client";
 import type { PrismWorkEntry } from "../api/types";
+import {
+  getOrCreatePrismWallet,
+  signUsefulWork,
+} from "../crypto/prismWallet";
 
 type MineJob = {
   id: string;
@@ -29,6 +33,7 @@ type MineJob = {
   reward: number;
   status: string;
   createdAt: string;
+  sourceChainHeight: number;
   result?: number;
   block?: number;
 };
@@ -382,13 +387,17 @@ export default function MineScreen() {
       setRewardedBlock(null);
       setRewardedAmount(null);
 
+      const mobileWallet =
+        await getOrCreatePrismWallet();
+
       const response =
         await requestJson<MineStartResponse>(
           "/mine/start",
           {
             method: "POST",
             body: JSON.stringify({
-              worker: "Alice",
+              worker:
+                mobileWallet.address,
             }),
           },
         );
@@ -460,15 +469,23 @@ export default function MineScreen() {
       setPhase("submitting");
       setError(null);
 
+      const signedProof =
+        await signUsefulWork({
+          jobId: job.id,
+          sourceChainHeight:
+            job.sourceChainHeight,
+          result,
+          score: job.input.length,
+        });
+
       const response =
         await requestJson<MineSubmitResponse>(
           "/mine/submit",
           {
             method: "POST",
-            body: JSON.stringify({
-              jobId: job.id,
-              result,
-            }),
+            body: JSON.stringify(
+              signedProof,
+            ),
           },
         );
 
