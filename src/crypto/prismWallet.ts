@@ -29,6 +29,7 @@ export type PrismPoUWJob = {
   workerAddress: string;
   task: string;
   input: number[];
+  inputB?: number[];
   inputHash: string;
   difficulty: string;
   reward: number;
@@ -158,43 +159,140 @@ Promise<PrismWallet> {
   );
 }
 
+function validatePoUWVector(
+  values: number[],
+  label: string,
+): void {
+  if (values.length === 0) {
+    throw new Error(
+      `PoUW ${label} contains no input.`,
+    );
+  }
+
+  for (const value of values) {
+    if (
+      !Number.isSafeInteger(value) ||
+      value < 0
+    ) {
+      throw new Error(
+        `PoUW ${label} contains an invalid integer.`,
+      );
+    }
+  }
+}
+
+function expectedPoUWInputHash(
+  job: PrismPoUWJob,
+): string {
+  if (job.task === "dot_product") {
+    if (!job.inputB) {
+      throw new Error(
+        "Dot product requires a second input vector.",
+      );
+    }
+
+    return hashText(
+      JSON.stringify({
+        values_a: job.input,
+        values_b: job.inputB,
+      }),
+    );
+  }
+
+  return hashText(
+    JSON.stringify(job.input),
+  );
+}
+
+function scorePrismPoUW(
+  job: PrismPoUWJob,
+): number {
+  if (job.task === "dot_product") {
+    return (
+      job.input.length +
+      (job.inputB?.length ?? 0)
+    );
+  }
+
+  return job.input.length;
+}
+
+function isPrime(value: number): boolean {
+  if (value < 2) {
+    return false;
+  }
+
+  if (value === 2) {
+    return true;
+  }
+
+  if (value % 2 === 0) {
+    return false;
+  }
+
+  for (
+    let divisor = 3;
+    divisor <= Math.floor(value / divisor);
+    divisor += 2
+  ) {
+    if (value % divisor === 0) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function
 verifyPrismPoUWJob(
   job: PrismPoUWJob,
 ): void {
   if (
-    job.task !== "sum_squares"
+    job.task !== "sum_squares" &&
+    job.task !== "dot_product" &&
+    job.task !== "prime_count"
   ) {
     throw new Error(
       `Unsupported PoUW task: ${job.task}`,
     );
   }
 
-  if (
-    job.input.length === 0
-  ) {
-    throw new Error(
-      "PoUW task contains no input.",
-    );
-  }
+  validatePoUWVector(
+    job.input,
+    "input",
+  );
 
-  for (
-    const value of job.input
-  ) {
-    if (
-      !Number.isSafeInteger(value) ||
-      value < 0
-    ) {
+  if (job.task === "dot_product") {
+    if (!job.inputB) {
       throw new Error(
-        "PoUW task contains an invalid integer.",
+        "Dot product requires a second input vector.",
       );
     }
+
+    validatePoUWVector(
+      job.inputB,
+      "second input",
+    );
+
+    if (
+      job.input.length !==
+      job.inputB.length
+    ) {
+      throw new Error(
+        "Dot product vectors must have the same length.",
+      );
+    }
+  } else if (
+    job.inputB &&
+    job.inputB.length > 0
+  ) {
+    throw new Error(
+      `${job.task} does not accept a second input vector.`,
+    );
   }
 
   const expectedInputHash =
-    hashText(
-      JSON.stringify(job.input),
-    );
+    expectedPoUWInputHash(job);
 
   if (
     job.inputHash !==
@@ -226,34 +324,89 @@ computePrismPoUW(
 ): number {
   verifyPrismPoUWJob(job);
 
-  let result = 0;
+  switch (job.task) {
+    case "sum_squares": {
+      let result = 0;
 
-  for (
-    const value of job.input
-  ) {
-    const square =
-      value * value;
+      for (const value of job.input) {
+        const square =
+          value * value;
 
-    if (
-      !Number.isSafeInteger(square)
-    ) {
-      throw new Error(
-        "PoUW multiplication overflow.",
-      );
+        if (
+          !Number.isSafeInteger(square)
+        ) {
+          throw new Error(
+            "PoUW multiplication overflow.",
+          );
+        }
+
+        result += square;
+
+        if (
+          !Number.isSafeInteger(result)
+        ) {
+          throw new Error(
+            "PoUW addition overflow.",
+          );
+        }
+      }
+
+      return result;
     }
 
-    result += square;
+    case "dot_product": {
+      const valuesB = job.inputB!;
 
-    if (
-      !Number.isSafeInteger(result)
-    ) {
-      throw new Error(
-        "PoUW addition overflow.",
-      );
+      let result = 0;
+
+      for (
+        let index = 0;
+        index < job.input.length;
+        index += 1
+      ) {
+        const product =
+          job.input[index] *
+          valuesB[index];
+
+        if (
+          !Number.isSafeInteger(product)
+        ) {
+          throw new Error(
+            "PoUW multiplication overflow.",
+          );
+        }
+
+        result += product;
+
+        if (
+          !Number.isSafeInteger(result)
+        ) {
+          throw new Error(
+            "PoUW addition overflow.",
+          );
+        }
+      }
+
+      return result;
     }
+
+    case "prime_count": {
+      let count = 0;
+
+      for (const value of job.input) {
+        if (isPrime(value)) {
+          count += 1;
+        }
+      }
+
+      return count;
+    }
+
+    default:
+      throw new Error(
+        `Unsupported PoUW task: ${job.task}`,
+      );
   }
-
-  return result;
 }
 
 export async function
@@ -304,7 +457,7 @@ signPrismPoUWProof(
     );
 
   const score =
-    job.input.length;
+    scorePrismPoUW(job);
 
   const payload = [
     job.id,

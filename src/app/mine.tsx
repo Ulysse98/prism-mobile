@@ -81,6 +81,11 @@ type MinerPhase =
   | "completed"
   | "error";
 
+type PoUWTaskType =
+  | "sum_squares"
+  | "dot_product"
+  | "prime_count";
+
 async function requestJson<T>(
   path: string,
   options?: RequestInit,
@@ -156,6 +161,19 @@ function formatTask(task: string) {
     .toUpperCase();
 }
 
+function workUnitsForJob(
+  job: MineJob,
+): number {
+  if (job.task === "dot_product") {
+    return (
+      job.input.length +
+      (job.inputB?.length ?? 0)
+    );
+  }
+
+  return job.input.length;
+}
+
 export default function MineScreen() {
   const [network, setNetwork] =
     useState<NetworkStatus | null>(null);
@@ -165,6 +183,13 @@ export default function MineScreen() {
 
   const [job, setJob] =
     useState<MineJob | null>(null);
+
+  const [
+    selectedTask,
+    setSelectedTask,
+  ] = useState<PoUWTaskType>(
+    "sum_squares",
+  );
 
   const [result, setResult] =
     useState<number | null>(null);
@@ -353,7 +378,10 @@ export default function MineScreen() {
     phase === "computing" ||
     phase === "submitting";
 
-  async function startWork() {
+  async function startWork(
+    taskType: PoUWTaskType =
+      selectedTask,
+  ) {
     if (
       !connected ||
       phase === "starting" ||
@@ -383,6 +411,7 @@ export default function MineScreen() {
             method: "POST",
             body: JSON.stringify({
               worker: wallet.address,
+              task: taskType,
             }),
           },
         );
@@ -417,12 +446,6 @@ export default function MineScreen() {
         (resolve) =>
           setTimeout(resolve, 650),
       );
-
-      if (job.task !== "sum_squares") {
-        throw new Error(
-          `Unsupported local workload: ${job.task}`,
-        );
-      }
 
       const computed =
         computePrismPoUW(job);
@@ -918,31 +941,96 @@ export default function MineScreen() {
                 </View>
               </View>
 
-              <Pressable
-                disabled={
-                  !connected || busy
-                }
-                onPress={() =>
-                  void startWork()
-                }
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  (!connected ||
-                    busy) &&
-                    styles.buttonDisabled,
-                  pressed &&
-                    connected &&
-                    styles.buttonPressed,
-                ]}
+              <View
+                style={{ gap: 10 }}
               >
-                <Text
-                  style={
-                    styles.primaryButtonText
-                  }
+                <Pressable
+                  disabled={!connected || busy}
+                  onPress={() => {
+                    setSelectedTask(
+                      "sum_squares",
+                    );
+                    void startWork(
+                      "sum_squares",
+                    );
+                  }}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    (!connected ||
+                      busy) &&
+                      styles.buttonDisabled,
+                    pressed &&
+                      connected &&
+                      styles.buttonPressed,
+                  ]}
                 >
-                  START WORK →
-                </Text>
-              </Pressable>
+                  <Text
+                    style={
+                      styles.primaryButtonText
+                    }
+                  >
+                    SUM SQUARES | LOW | +2 PRISM
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  disabled={!connected || busy}
+                  onPress={() => {
+                    setSelectedTask(
+                      "dot_product",
+                    );
+                    void startWork(
+                      "dot_product",
+                    );
+                  }}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    (!connected ||
+                      busy) &&
+                      styles.buttonDisabled,
+                    pressed &&
+                      connected &&
+                      styles.buttonPressed,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.primaryButtonText
+                    }
+                  >
+                    DOT PRODUCT | MEDIUM | +2 PRISM
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  disabled={!connected || busy}
+                  onPress={() => {
+                    setSelectedTask(
+                      "prime_count",
+                    );
+                    void startWork(
+                      "prime_count",
+                    );
+                  }}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    (!connected ||
+                      busy) &&
+                      styles.buttonDisabled,
+                    pressed &&
+                      connected &&
+                      styles.buttonPressed,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.primaryButtonText
+                    }
+                  >
+                    PRIME COUNT | MEDIUM | +2 PRISM
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           )}
 
@@ -1032,7 +1120,7 @@ export default function MineScreen() {
               <Text
                 style={styles.inputLabel}
               >
-                INPUT
+                INPUT A
               </Text>
 
               <Text
@@ -1044,6 +1132,35 @@ export default function MineScreen() {
                 )}
                 ]
               </Text>
+
+              {job.task ===
+                "dot_product" &&
+                job.inputB && (
+                  <>
+                    <Text
+                      style={[
+                        styles.inputLabel,
+                        {
+                          marginTop: 16,
+                        },
+                      ]}
+                    >
+                      INPUT B
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.inputValue
+                      }
+                    >
+                      [
+                      {job.inputB.join(
+                        ", ",
+                      )}
+                      ]
+                    </Text>
+                  </>
+                )}
             </View>
 
             <View
@@ -1057,7 +1174,7 @@ export default function MineScreen() {
                     styles.jobStatValue
                   }
                 >
-                  {job.input.length}
+                  {workUnitsForJob(job)}
                 </Text>
 
                 <Text
