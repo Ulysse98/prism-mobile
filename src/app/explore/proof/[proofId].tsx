@@ -1,10 +1,10 @@
 import {
     router,
+    useFocusEffect,
     useLocalSearchParams,
 } from "expo-router";
 import {
     useCallback,
-    useEffect,
     useState,
 } from "react";
 import {
@@ -185,9 +185,11 @@ export default function ProofDetailScreen() {
     [proofId],
   );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   if (
     mode === "loading" &&
