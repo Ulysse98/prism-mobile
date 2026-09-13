@@ -19,19 +19,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PRISM_API } from "../api/client";
 import type { PrismWorkEntry } from "../api/types";
+import {
+  computePrismPoUW,
+  getOrCreatePrismWallet,
+  signPrismPoUWProof,
+} from "../crypto/prismWallet";
+import type {
+  PrismPoUWJob,
+} from "../crypto/prismWallet";
 
-type MineJob = {
-  id: string;
-  worker: string;
-  task: string;
-  input: number[];
-  difficulty: string;
-  reward: number;
-  status: string;
-  createdAt: string;
-  result?: number;
-  block?: number;
-};
+type MineJob = PrismPoUWJob;
 
 type MineStartResponse = {
   job: MineJob;
@@ -121,14 +118,6 @@ async function requestJson<T>(
   }
 
   return body as T;
-}
-
-function sumSquares(values: number[]) {
-  return values.reduce(
-    (total, value) =>
-      total + value * value,
-    0,
-  );
 }
 
 function mineErrorMessage(
@@ -382,13 +371,18 @@ export default function MineScreen() {
       setRewardedBlock(null);
       setRewardedAmount(null);
 
+      const wallet =
+        await getOrCreatePrismWallet();
+
+
+
       const response =
         await requestJson<MineStartResponse>(
           "/mine/start",
           {
             method: "POST",
             body: JSON.stringify({
-              worker: "Alice",
+              worker: wallet.address,
             }),
           },
         );
@@ -431,7 +425,7 @@ export default function MineScreen() {
       }
 
       const computed =
-        sumSquares(job.input);
+        computePrismPoUW(job);
 
       setResult(computed);
       setPhase("computed");
@@ -460,15 +454,22 @@ export default function MineScreen() {
       setPhase("submitting");
       setError(null);
 
+      const signedProof =
+        await signPrismPoUWProof(
+          job,
+          result,
+        );
+
+
+
       const response =
         await requestJson<MineSubmitResponse>(
           "/mine/submit",
           {
             method: "POST",
-            body: JSON.stringify({
-              jobId: job.id,
-              result,
-            }),
+            body: JSON.stringify(
+              signedProof,
+            ),
           },
         );
 
