@@ -148,7 +148,7 @@ function shortId(value: string) {
     return value;
   }
 
-  return `${value.slice(0, 8)}\u2026${value.slice(-6)}`;
+  return `${value.slice(0, 8)}ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦${value.slice(-6)}`;
 }
 
 function formatTask(task: string) {
@@ -770,7 +770,7 @@ export default function MineScreen() {
                 <Text
                   style={styles.orbIcon}
                 >
-                  {"\u26A1"}
+                  ÃƒÂ¢Ã…Â¡Ã‚Â¡
                 </Text>
               </View>
             </View>
@@ -862,7 +862,7 @@ export default function MineScreen() {
               <Text
                 style={styles.networkMeta}
               >
-                HEIGHT {network.height} {"\u00B7"}{" "}
+                HEIGHT {network.height} Ãƒâ€šÃ‚Â·{" "}
                 {network.version}
               </Text>
             </View>
@@ -1004,7 +1004,7 @@ export default function MineScreen() {
                     styles.primaryButtonText
                   }
                 >
-                  REQUEST NETWORK WORK {"\u2192"}
+                  REQUEST NETWORK WORK â†’
                 </Text>
               </Pressable>            </View>
           )}
@@ -1029,7 +1029,7 @@ export default function MineScreen() {
                 }
               >
                 Fetching useful work
-                from Prism node{"\u2026"}
+                from Prism nodeÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦
               </Text>
             </View>
           </View>
@@ -1089,7 +1089,7 @@ export default function MineScreen() {
             <Text
               style={styles.jobId}
             >
-              {job.id} {"\u00B7"} {job.worker}
+              {job.id} Ãƒâ€šÃ‚Â· {job.worker}
             </Text>
 
             <View
@@ -1105,9 +1105,9 @@ export default function MineScreen() {
                       },
                     ]}
                   >
-                    MATRIX A {job.rowsA}{"\u00D7"}
-                    {job.colsA} {"\u00B7"} MATRIX B{" "}
-                    {job.colsA}{"\u00D7"}
+                    MATRIX A {job.rowsA}Ã—
+                    {job.colsA} Â· MATRIX B{" "}
+                    {job.colsA}Ã—
                     {job.colsB}
                   </Text>
                 )}
@@ -1255,7 +1255,7 @@ export default function MineScreen() {
                     styles.primaryButtonText
                   }
                 >
-                  RUN COMPUTE {"\u2192"}
+                  RUN COMPUTE ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢
                 </Text>
               </Pressable>
             )}
@@ -1277,7 +1277,7 @@ export default function MineScreen() {
                     styles.computingText
                   }
                 >
-                  Computing useful workload on device{"\u2026"}
+                  Computing useful workload on device?ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦
                 </Text>
               </View>
             )}
@@ -1364,7 +1364,7 @@ export default function MineScreen() {
                         styles.primaryButtonText
                       }
                     >
-                      SUBMIT PROOF {"\u2192"}
+                      SUBMIT PROOF ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢
                     </Text>
                   </Pressable>
                 </>
@@ -1388,7 +1388,7 @@ export default function MineScreen() {
                   }
                 >
                   Verifying proof on
-                  Prism node{"\u2026"}
+                  Prism nodeÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦
                 </Text>
               </View>
             )}
@@ -1429,7 +1429,7 @@ export default function MineScreen() {
                     Proof included in
                     block{" "}
                     {rewardedBlock ??
-                      "\u2014"}
+                      "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
                     .
                   </Text>
                 </Animated.View>
@@ -1451,7 +1451,7 @@ export default function MineScreen() {
                       styles.secondaryButtonText
                     }
                   >
-                    MINE NEXT JOB {"\u2192"}
+                    MINE NEXT JOB ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢
                   </Text>
                 </Pressable>
               </>
@@ -1561,7 +1561,7 @@ export default function MineScreen() {
                   styles.sessionStatValue
                 }
               >
-                {network?.height ?? "\u2014"}
+                {network?.height ?? "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
               </Text>
 
               <Text
@@ -1636,7 +1636,7 @@ export default function MineScreen() {
                         styles.historyIconText
                       }
                     >
-                      {"\u2713"}
+                      ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“
                     </Text>
                   </View>
 
@@ -1663,7 +1663,7 @@ export default function MineScreen() {
                       {shortId(
                         entry.proofId,
                       )}{" "}
-                      {"\u00B7"} Block{" "}
+                      Ãƒâ€šÃ‚Â· Block{" "}
                       {entry.block}
                     </Text>
                   </View>
@@ -1762,7 +1762,7 @@ export default function MineScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Prism {"\u00B7"} Useful Work Miner
+          Prism Ãƒâ€šÃ‚Â· Useful Work Miner
         </Text>
       </ScrollView>
     </SafeAreaView>

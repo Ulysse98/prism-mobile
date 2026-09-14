@@ -17,11 +17,16 @@ const SECRET_KEY_STORAGE_KEY =
   "prism.wallet.ed25519.secret.v1";
 
 const SECRET_KEY_SIZE = 32;
+const MAX_MATRIX_ELEMENTS = 4096;
 
 export type PrismWallet = {
   address: string;
   publicKey: string;
 };
+
+export type PrismPoUWResult =
+  | number
+  | number[];
 
 export type PrismPoUWJob = {
   id: string;
@@ -30,6 +35,9 @@ export type PrismPoUWJob = {
   task: string;
   input: number[];
   inputB?: number[];
+  rowsA?: number;
+  colsA?: number;
+  colsB?: number;
   inputHash: string;
   difficulty: string;
   reward: number;
@@ -44,6 +52,7 @@ export type SignedPrismPoUWProof = {
   workerAddress: string;
   publicKey: string;
   result: number;
+  resultValues?: number[];
   outputHash: string;
   score: number;
   proofId: string;
@@ -159,6 +168,46 @@ Promise<PrismWallet> {
   );
 }
 
+function checkedMultiply(
+  left: number,
+  right: number,
+  label: string,
+): number {
+  const result =
+    left * right;
+
+  if (
+    !Number.isSafeInteger(result) ||
+    result < 0
+  ) {
+    throw new Error(
+      `${label} multiplication overflow.`,
+    );
+  }
+
+  return result;
+}
+
+function checkedAdd(
+  left: number,
+  right: number,
+  label: string,
+): number {
+  const result =
+    left + right;
+
+  if (
+    !Number.isSafeInteger(result) ||
+    result < 0
+  ) {
+    throw new Error(
+      `${label} addition overflow.`,
+    );
+  }
+
+  return result;
+}
+
 function validatePoUWVector(
   values: number[],
   label: string,
@@ -181,6 +230,39 @@ function validatePoUWVector(
   }
 }
 
+function matrixDimensions(
+  job: PrismPoUWJob,
+) {
+  const rowsA = job.rowsA;
+  const colsA = job.colsA;
+  const colsB = job.colsB;
+
+  for (const [
+    name,
+    value,
+  ] of [
+    ["rowsA", rowsA],
+    ["colsA", colsA],
+    ["colsB", colsB],
+  ] as const) {
+    if (
+      value === undefined ||
+      !Number.isSafeInteger(value) ||
+      value <= 0
+    ) {
+      throw new Error(
+        `Invalid matrix dimension: ${name}.`,
+      );
+    }
+  }
+
+  return {
+    rowsA: rowsA!,
+    colsA: colsA!,
+    colsB: colsB!,
+  };
+}
+
 function expectedPoUWInputHash(
   job: PrismPoUWJob,
 ): string {
@@ -193,6 +275,33 @@ function expectedPoUWInputHash(
 
     return hashText(
       JSON.stringify({
+        values_a: job.input,
+        values_b: job.inputB,
+      }),
+    );
+  }
+
+  if (
+    job.task ===
+    "matrix_multiply"
+  ) {
+    if (!job.inputB) {
+      throw new Error(
+        "Matrix multiply requires matrix B.",
+      );
+    }
+
+    const {
+      rowsA,
+      colsA,
+      colsB,
+    } = matrixDimensions(job);
+
+    return hashText(
+      JSON.stringify({
+        rows_a: rowsA,
+        cols_a: colsA,
+        cols_b: colsB,
         values_a: job.input,
         values_b: job.inputB,
       }),
@@ -214,10 +323,33 @@ function scorePrismPoUW(
     );
   }
 
+  if (
+    job.task ===
+    "matrix_multiply"
+  ) {
+    const {
+      rowsA,
+      colsA,
+      colsB,
+    } = matrixDimensions(job);
+
+    return checkedMultiply(
+      checkedMultiply(
+        rowsA,
+        colsA,
+        "Matrix work units",
+      ),
+      colsB,
+      "Matrix work units",
+    );
+  }
+
   return job.input.length;
 }
 
-function isPrime(value: number): boolean {
+function isPrime(
+  value: number,
+): boolean {
   if (value < 2) {
     return false;
   }
@@ -232,7 +364,8 @@ function isPrime(value: number): boolean {
 
   for (
     let divisor = 3;
-    divisor <= Math.floor(value / divisor);
+    divisor <=
+      Math.floor(value / divisor);
     divisor += 2
   ) {
     if (value % divisor === 0) {
@@ -250,7 +383,8 @@ verifyPrismPoUWJob(
   if (
     job.task !== "sum_squares" &&
     job.task !== "dot_product" &&
-    job.task !== "prime_count"
+    job.task !== "prime_count" &&
+    job.task !== "matrix_multiply"
   ) {
     throw new Error(
       `Unsupported PoUW task: ${job.task}`,
@@ -280,6 +414,77 @@ verifyPrismPoUWJob(
     ) {
       throw new Error(
         "Dot product vectors must have the same length.",
+      );
+    }
+  } else if (
+    job.task === "matrix_multiply"
+  ) {
+    if (!job.inputB) {
+      throw new Error(
+        "Matrix multiply requires matrix B.",
+      );
+    }
+
+    validatePoUWVector(
+      job.inputB,
+      "matrix B",
+    );
+
+    const {
+      rowsA,
+      colsA,
+      colsB,
+    } = matrixDimensions(job);
+
+    const expectedA =
+      checkedMultiply(
+        rowsA,
+        colsA,
+        "Matrix A size",
+      );
+
+    const expectedB =
+      checkedMultiply(
+        colsA,
+        colsB,
+        "Matrix B size",
+      );
+
+    const expectedOutput =
+      checkedMultiply(
+        rowsA,
+        colsB,
+        "Matrix output size",
+      );
+
+    if (
+      expectedA >
+        MAX_MATRIX_ELEMENTS ||
+      expectedB >
+        MAX_MATRIX_ELEMENTS ||
+      expectedOutput >
+        MAX_MATRIX_ELEMENTS
+    ) {
+      throw new Error(
+        "Matrix task exceeds maximum size.",
+      );
+    }
+
+    if (
+      job.input.length !==
+      expectedA
+    ) {
+      throw new Error(
+        `Matrix A expects ${expectedA} values, got ${job.input.length}.`,
+      );
+    }
+
+    if (
+      job.inputB.length !==
+      expectedB
+    ) {
+      throw new Error(
+        `Matrix B expects ${expectedB} values, got ${job.inputB.length}.`,
       );
     }
   } else if (
@@ -318,10 +523,79 @@ verifyPrismPoUWJob(
   }
 }
 
+function computeMatrixMultiply(
+  job: PrismPoUWJob,
+): number[] {
+  const valuesB =
+    job.inputB!;
+
+  const {
+    rowsA,
+    colsA,
+    colsB,
+  } = matrixDimensions(job);
+
+  const output =
+    new Array<number>(
+      rowsA * colsB,
+    ).fill(0);
+
+  for (
+    let row = 0;
+    row < rowsA;
+    row += 1
+  ) {
+    for (
+      let col = 0;
+      col < colsB;
+      col += 1
+    ) {
+      let cell = 0;
+
+      for (
+        let inner = 0;
+        inner < colsA;
+        inner += 1
+      ) {
+        const aIndex =
+          row * colsA +
+          inner;
+
+        const bIndex =
+          inner * colsB +
+          col;
+
+        const product =
+          checkedMultiply(
+            job.input[aIndex],
+            valuesB[bIndex],
+            "PoUW matrix",
+          );
+
+        cell =
+          checkedAdd(
+            cell,
+            product,
+            "PoUW matrix",
+          );
+      }
+
+      const outputIndex =
+        row * colsB +
+        col;
+
+      output[outputIndex] =
+        cell;
+    }
+  }
+
+  return output;
+}
+
 export function
 computePrismPoUW(
   job: PrismPoUWJob,
-): number {
+): PrismPoUWResult {
   verifyPrismPoUWJob(job);
 
   switch (job.task) {
@@ -330,32 +604,26 @@ computePrismPoUW(
 
       for (const value of job.input) {
         const square =
-          value * value;
-
-        if (
-          !Number.isSafeInteger(square)
-        ) {
-          throw new Error(
-            "PoUW multiplication overflow.",
+          checkedMultiply(
+            value,
+            value,
+            "PoUW",
           );
-        }
 
-        result += square;
-
-        if (
-          !Number.isSafeInteger(result)
-        ) {
-          throw new Error(
-            "PoUW addition overflow.",
+        result =
+          checkedAdd(
+            result,
+            square,
+            "PoUW",
           );
-        }
       }
 
       return result;
     }
 
     case "dot_product": {
-      const valuesB = job.inputB!;
+      const valuesB =
+        job.inputB!;
 
       let result = 0;
 
@@ -365,26 +633,18 @@ computePrismPoUW(
         index += 1
       ) {
         const product =
-          job.input[index] *
-          valuesB[index];
-
-        if (
-          !Number.isSafeInteger(product)
-        ) {
-          throw new Error(
-            "PoUW multiplication overflow.",
+          checkedMultiply(
+            job.input[index],
+            valuesB[index],
+            "PoUW",
           );
-        }
 
-        result += product;
-
-        if (
-          !Number.isSafeInteger(result)
-        ) {
-          throw new Error(
-            "PoUW addition overflow.",
+        result =
+          checkedAdd(
+            result,
+            product,
+            "PoUW",
           );
-        }
       }
 
       return result;
@@ -402,6 +662,9 @@ computePrismPoUW(
       return count;
     }
 
+    case "matrix_multiply":
+      return computeMatrixMultiply(job);
+
     default:
       throw new Error(
         `Unsupported PoUW task: ${job.task}`,
@@ -409,31 +672,74 @@ computePrismPoUW(
   }
 }
 
+function equalPoUWResult(
+  left: PrismPoUWResult,
+  right: PrismPoUWResult,
+): boolean {
+  if (
+    Array.isArray(left) !==
+    Array.isArray(right)
+  ) {
+    return false;
+  }
+
+  if (
+    !Array.isArray(left) &&
+    !Array.isArray(right)
+  ) {
+    return left === right;
+  }
+
+  const leftValues =
+    left as number[];
+
+  const rightValues =
+    right as number[];
+
+  if (
+    leftValues.length !==
+    rightValues.length
+  ) {
+    return false;
+  }
+
+  return leftValues.every(
+    (value, index) =>
+      value ===
+      rightValues[index],
+  );
+}
+
 export async function
 signPrismPoUWProof(
   job: PrismPoUWJob,
-  result: number,
+  result: PrismPoUWResult,
 ): Promise<SignedPrismPoUWProof> {
   verifyPrismPoUWJob(job);
 
+  const expectedResult =
+    computePrismPoUW(job);
+
   if (
-    !Number.isSafeInteger(result) ||
-    result < 0
+    !equalPoUWResult(
+      result,
+      expectedResult,
+    )
   ) {
     throw new Error(
       "Invalid PoUW result.",
     );
   }
 
-  const expectedResult =
-    computePrismPoUW(job);
-
-  if (
-    result !== expectedResult
-  ) {
-    throw new Error(
-      `Invalid PoUW result: expected ${expectedResult}, got ${result}.`,
-    );
+  if (!Array.isArray(result)) {
+    if (
+      !Number.isSafeInteger(result) ||
+      result < 0
+    ) {
+      throw new Error(
+        "Invalid PoUW scalar result.",
+      );
+    }
   }
 
   const secretKey =
@@ -451,10 +757,28 @@ signPrismPoUWProof(
     );
   }
 
+  const matrixResult =
+    Array.isArray(result)
+      ? [...result]
+      : undefined;
+
+  const scalarResult: number =
+    Array.isArray(result)
+      ? 0
+      : result;
+
   const outputHash =
-    hashText(
-      String(result),
-    );
+    matrixResult
+      ? hashText(
+          JSON.stringify(
+            matrixResult,
+          ),
+        )
+      : hashText(
+          String(
+            scalarResult,
+          ),
+        );
 
   const score =
     scorePrismPoUW(job);
@@ -463,7 +787,7 @@ signPrismPoUWProof(
     job.id,
     wallet.address,
     wallet.publicKey,
-    String(result),
+    String(scalarResult),
     outputHash,
     String(score),
   ].join("|");
@@ -486,7 +810,10 @@ signPrismPoUWProof(
       wallet.address,
     publicKey:
       wallet.publicKey,
-    result,
+    result:
+      scalarResult,
+    resultValues:
+      matrixResult,
     outputHash,
     score,
     proofId,
