@@ -223,6 +223,22 @@ export function ComputeReceiptCard({
         </Text>
       </View>
 
+      {receipt.crossChainReceipt && (
+        <View style={styles.row}>
+          <Text style={styles.label}>
+            REGISTRY ID
+          </Text>
+
+          <Text style={styles.value}>
+            {shortId(
+              receipt.crossChainReceipt.registryId,
+              10,
+              8,
+            )}
+          </Text>
+        </View>
+      )}
+
       {receipt.score !==
         undefined && (
         <View style={styles.row}>

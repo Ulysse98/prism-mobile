@@ -13,6 +13,17 @@ export type ComputeReceiptResult =
   | string
   | number[];
 
+export type PrismCrossChainReceipt = {
+  version: 1;
+
+  jobId: string;
+  proofId: string;
+
+  workerIdHash: string;
+  prismChainIdHash: string;
+  registryId: string;
+};
+
 export type ComputeReceiptSettlement = {
   chain: Exclude<
     ComputeReceiptChain,
@@ -50,6 +61,8 @@ export type ComputeReceipt = {
   verified: boolean;
 
   createdAt: string;
+
+  crossChainReceipt?: PrismCrossChainReceipt;
 
   settlements:
     ComputeReceiptSettlement[];

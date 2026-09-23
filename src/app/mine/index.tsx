@@ -17,21 +17,22 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { PRISM_API } from "../api/client";
-import type { PrismWorkEntry } from "../api/types";
+import { PRISM_API } from "../../api/client";
+import type { PrismWorkEntry } from "../../api/types";
 import type {
   PrismPoUWJob,
   PrismPoUWResult,
-} from "../crypto/prismWallet";
+} from "../../crypto/prismWallet";
 import {
   computePrismPoUW,
   getOrCreatePrismWallet,
   signPrismPoUWProof,
-} from "../crypto/prismWallet";
+} from "../../crypto/prismWallet";
 
 import {
   createComputeReceipt,
-} from "../types/computeReceipt";
+  type PrismCrossChainReceipt,
+} from "../../types/computeReceipt";
 
 type MineJob = Omit<
   PrismPoUWJob,
@@ -59,6 +60,7 @@ type MineSubmitResponse = {
   block: number;
   totalSupply: number;
   proof?: MineReceiptProof;
+  crossChainReceipt?: PrismCrossChainReceipt;
 };
 
 type NetworkStatus = {
@@ -168,6 +170,15 @@ function mineErrorMessage(
   }
 
   return message || fallback;
+}
+
+function canonicalHex(value: string): string {
+  const normalized =
+    value.trim().toLowerCase();
+
+  return normalized.startsWith("0x")
+    ? normalized
+    : `0x${normalized}`;
 }
 
 function shortId(value: string) {
@@ -891,6 +902,31 @@ export default function MineScreen() {
         );
       }
 
+      const crossChainReceipt =
+        response.crossChainReceipt;
+
+      if (
+        !crossChainReceipt ||
+        crossChainReceipt.version !== 1 ||
+        canonicalHex(
+          crossChainReceipt.jobId,
+        ) !== canonicalHex(
+          proof.taskId,
+        ) ||
+        canonicalHex(
+          crossChainReceipt.proofId,
+        ) !== canonicalHex(
+          proof.proofId,
+        ) ||
+        !crossChainReceipt.workerIdHash ||
+        !crossChainReceipt.prismChainIdHash ||
+        !crossChainReceipt.registryId
+      ) {
+        throw new Error(
+          "Prism node returned an invalid canonical cross-chain receipt.",
+        );
+      }
+
       const receipt = createComputeReceipt({
         jobId: proof.taskId,
         proofId: proof.proofId,
@@ -908,6 +944,7 @@ export default function MineScreen() {
         verified: true,
         createdAt:
           new Date().toISOString(),
+        crossChainReceipt,
         settlements: [],
       });
 
@@ -937,7 +974,7 @@ export default function MineScreen() {
       ]);
 
       router.push({
-        pathname: "/receipt",
+        pathname: "/mine/receipt",
         params: {
           receipt: JSON.stringify(
             receipt,
