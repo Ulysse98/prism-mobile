@@ -1,4 +1,4 @@
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
   useCallback,
   useEffect,
@@ -29,6 +29,10 @@ import {
   signPrismPoUWProof,
 } from "../crypto/prismWallet";
 
+import {
+  createComputeReceipt,
+} from "../types/computeReceipt";
+
 type MineJob = Omit<
   PrismPoUWJob,
   "input" | "inputB"
@@ -41,16 +45,25 @@ type MineStartResponse = {
   job: MineJob;
 };
 
+type MineReceiptProof =
+  PrismWorkEntry & {
+    taskId: string;
+    workerAddress: string;
+    resultValues?: number[];
+    outputHash: string;
+  };
+
 type MineSubmitResponse = {
   verified: boolean;
   reward: number;
   block: number;
   totalSupply: number;
-  proof?: PrismWorkEntry;
+  proof?: MineReceiptProof;
 };
 
 type NetworkStatus = {
   network: string;
+  chainId: string;
   height: number;
   blocks: number;
   validators: number;
@@ -870,6 +883,34 @@ export default function MineScreen() {
         );
       }
 
+      const proof = response.proof;
+
+      if (!proof) {
+        throw new Error(
+          "Prism node verified the proof but did not return the proof receipt.",
+        );
+      }
+
+      const receipt = createComputeReceipt({
+        jobId: proof.taskId,
+        proofId: proof.proofId,
+        taskType: proof.task,
+        worker: proof.workerAddress,
+        prismChainId:
+          network?.chainId ?? "unknown",
+        result:
+          proof.resultValues?.length
+            ? proof.resultValues
+            : proof.result,
+        outputHash: proof.outputHash,
+        score: proof.score,
+        reward: response.reward,
+        verified: true,
+        createdAt:
+          new Date().toISOString(),
+        settlements: [],
+      });
+
       setRewardedBlock(
         response.block,
       );
@@ -894,6 +935,15 @@ export default function MineScreen() {
         loadStatus(),
         loadRecentWork(),
       ]);
+
+      router.push({
+        pathname: "/receipt",
+        params: {
+          receipt: JSON.stringify(
+            receipt,
+          ),
+        },
+      });
     } catch (err) {
       setError(
         mineErrorMessage(
