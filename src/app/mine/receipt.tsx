@@ -5,7 +5,9 @@ import {
 } from "expo-router";
 
 import {
+  useEffect,
   useMemo,
+  useState,
 } from "react";
 
 import {
@@ -21,12 +23,27 @@ import {
 } from "react-native-safe-area-context";
 
 import {
+  getJson,
+} from "../../api/client";
+
+import {
   ComputeReceiptCard,
 } from "../../components/ComputeReceiptCard";
 
 import type {
   ComputeReceipt,
+  ComputeReceiptSettlement,
 } from "../../types/computeReceipt";
+
+type SettlementResponse = {
+  registryId: string;
+  settlements: ComputeReceiptSettlement[];
+};
+
+type LiveSettlementState = {
+  registryId: string;
+  settlements: ComputeReceiptSettlement[];
+};
 
 function parseReceipt(
   raw: string | undefined,
@@ -68,6 +85,101 @@ export default function ReceiptScreen() {
     [params.receipt],
   );
 
+  const [
+    liveSettlementState,
+    setLiveSettlementState,
+  ] = useState<
+    LiveSettlementState | null
+  >(null);
+
+  useEffect(() => {
+    const registryId =
+      receipt?.crossChainReceipt?.registryId;
+
+    if (!registryId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSettlements =
+      async () => {
+        try {
+          const response =
+            await getJson<SettlementResponse>(
+              `/settlements/${encodeURIComponent(
+                registryId,
+              )}`,
+            );
+
+          if (cancelled) {
+            return;
+          }
+
+          if (
+            response.registryId.toLowerCase() !==
+            registryId.toLowerCase()
+          ) {
+            throw new Error(
+              "Settlement registry ID mismatch.",
+            );
+          }
+
+          setLiveSettlementState({
+            registryId:
+              response.registryId,
+            settlements:
+              response.settlements,
+          });
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          console.warn(
+            "[Prism Receipt] Unable to load settlements:",
+            error,
+          );
+        }
+      };
+
+    void loadSettlements();
+
+    const interval =
+      setInterval(
+        () => {
+          void loadSettlements();
+        },
+        5000,
+      );
+
+    return () => {
+      cancelled = true;
+
+      clearInterval(
+        interval,
+      );
+    };
+  }, [receipt]);
+
+  const matchingLiveSettlements =
+    receipt?.crossChainReceipt &&
+    liveSettlementState &&
+    liveSettlementState.registryId.toLowerCase() ===
+      receipt.crossChainReceipt.registryId.toLowerCase()
+      ? liveSettlementState.settlements
+      : null;
+
+  const displayReceipt =
+    receipt &&
+    matchingLiveSettlements !== null
+      ? {
+          ...receipt,
+          settlements:
+            matchingLiveSettlements,
+        }
+      : receipt;
+
   return (
     <>
       <Stack.Screen
@@ -103,7 +215,7 @@ export default function ReceiptScreen() {
                   styles.backButtonText
                 }
               >
-                ←
+                {"\u2190"}
               </Text>
             </Pressable>
 
@@ -117,7 +229,7 @@ export default function ReceiptScreen() {
                   styles.protocolLabel
                 }
               >
-                PRISM MOBILE · v0.41
+                PRISM MOBILE / v0.42
               </Text>
 
               <Text style={styles.heading}>
@@ -125,7 +237,7 @@ export default function ReceiptScreen() {
               </Text>
             </View>
           </View>
-          {receipt ? (
+          {displayReceipt ? (
             <>
               <View style={styles.demoNotice}>
                 <Text
@@ -148,7 +260,7 @@ export default function ReceiptScreen() {
               </View>
 
               <ComputeReceiptCard
-                receipt={receipt}
+                receipt={displayReceipt}
               />
             </>
           ) : (
@@ -178,7 +290,7 @@ export default function ReceiptScreen() {
                 styles.footerTitle
               }
             >
-              PROOF → RECEIPT → SETTLEMENT
+              {"PROOF \u2192 RECEIPT \u2192 SETTLEMENT"}
             </Text>
 
             <Text
