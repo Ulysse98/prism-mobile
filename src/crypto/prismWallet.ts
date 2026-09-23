@@ -1,5 +1,5 @@
-import * as ed from "@noble/ed25519";
-import { sha256, sha512 } from "@noble/hashes/sha2.js";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import {
   bytesToHex,
   hexToBytes,
@@ -8,10 +8,10 @@ import {
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 
-ed.hashes.sha512 = sha512;
-ed.hashes.sha512Async = async (
-  message: Uint8Array,
-) => sha512(message);
+/*
+ * Ed25519 comes from @noble/curves and stays entirely in JavaScript.
+ * We deliberately avoid the WebCrypto / expo-crypto digest bridge here.
+ */
 
 const SECRET_KEY_STORAGE_KEY =
   "prism.wallet.ed25519.secret.v1";
@@ -128,10 +128,25 @@ Promise<Uint8Array> {
     return existing;
   }
 
+  /*
+   * Use the synchronous Expo API here.
+   * This returns Uint8Array directly and avoids an async native bridge
+   * round-trip during wallet initialization.
+   */
   const secretKey =
-    await Crypto.getRandomBytesAsync(
+    Crypto.getRandomBytes(
       SECRET_KEY_SIZE,
     );
+
+  if (
+    !(secretKey instanceof Uint8Array) ||
+    secretKey.length !==
+      SECRET_KEY_SIZE
+  ) {
+    throw new Error(
+      "Expo Crypto returned an invalid Prism private key.",
+    );
+  }
 
   await SecureStore.setItemAsync(
     SECRET_KEY_STORAGE_KEY,
@@ -144,8 +159,17 @@ Promise<Uint8Array> {
 function deriveWallet(
   secretKey: Uint8Array,
 ): PrismWallet {
+  if (
+    secretKey.length !==
+    SECRET_KEY_SIZE
+  ) {
+    throw new Error(
+      "Prism wallet private key must be 32 bytes.",
+    );
+  }
+
   const publicKey =
-    ed.getPublicKey(secretKey);
+    ed25519.getPublicKey(secretKey);
 
   return {
     address:
@@ -212,6 +236,12 @@ function validatePoUWVector(
   values: number[],
   label: string,
 ): void {
+  if (!Array.isArray(values)) {
+    throw new Error(
+      `PoUW ${label} is not an array.`,
+    );
+  }
+
   if (values.length === 0) {
     throw new Error(
       `PoUW ${label} contains no input.`,
@@ -263,6 +293,48 @@ function matrixDimensions(
   };
 }
 
+function convolutionDimensions(
+  job: PrismPoUWJob,
+) {
+  const rows = job.rowsA;
+  const cols = job.colsA;
+  const kernelSize = job.colsB;
+
+  for (const [
+    name,
+    value,
+  ] of [
+    ["rows", rows],
+    ["cols", cols],
+    ["kernelSize", kernelSize],
+  ] as const) {
+    if (
+      value === undefined ||
+      !Number.isSafeInteger(value) ||
+      value <= 0
+    ) {
+      throw new Error(
+        `Invalid convolution dimension: ${name}.`,
+      );
+    }
+  }
+
+  if (
+    kernelSize! > rows! ||
+    kernelSize! > cols!
+  ) {
+    throw new Error(
+      "Convolution kernel cannot be larger than the image.",
+    );
+  }
+
+  return {
+    rows: rows!,
+    cols: cols!,
+    kernelSize: kernelSize!,
+  };
+}
+
 function expectedPoUWInputHash(
   job: PrismPoUWJob,
 ): string {
@@ -308,6 +380,39 @@ function expectedPoUWInputHash(
     );
   }
 
+  if (
+    job.task ===
+    "image_convolution"
+  ) {
+    if (!job.inputB) {
+      throw new Error(
+        "Image convolution requires a kernel.",
+      );
+    }
+
+    const {
+      rows,
+      cols,
+      kernelSize,
+    } =
+      convolutionDimensions(
+        job,
+      );
+
+    return hashText(
+      JSON.stringify({
+        rows,
+        cols,
+        kernel_size:
+          kernelSize,
+        image:
+          job.input,
+        kernel:
+          job.inputB,
+      }),
+    );
+  }
+
   return hashText(
     JSON.stringify(job.input),
   );
@@ -344,6 +449,50 @@ function scorePrismPoUW(
     );
   }
 
+  if (
+    job.task ===
+    "image_convolution"
+  ) {
+    const {
+      rows,
+      cols,
+      kernelSize,
+    } =
+      convolutionDimensions(
+        job,
+      );
+
+    const outputRows =
+      rows -
+      kernelSize +
+      1;
+
+    const outputCols =
+      cols -
+      kernelSize +
+      1;
+
+    const outputCells =
+      checkedMultiply(
+        outputRows,
+        outputCols,
+        "Convolution output cells",
+      );
+
+    const kernelCells =
+      checkedMultiply(
+        kernelSize,
+        kernelSize,
+        "Convolution kernel cells",
+      );
+
+    return checkedMultiply(
+      outputCells,
+      kernelCells,
+      "Convolution work units",
+    );
+  }
+
   return job.input.length;
 }
 
@@ -365,10 +514,14 @@ function isPrime(
   for (
     let divisor = 3;
     divisor <=
-      Math.floor(value / divisor);
+      Math.floor(
+        value / divisor,
+      );
     divisor += 2
   ) {
-    if (value % divisor === 0) {
+    if (
+      value % divisor === 0
+    ) {
       return false;
     }
   }
@@ -384,7 +537,8 @@ verifyPrismPoUWJob(
     job.task !== "sum_squares" &&
     job.task !== "dot_product" &&
     job.task !== "prime_count" &&
-    job.task !== "matrix_multiply"
+    job.task !== "matrix_multiply" &&
+    job.task !== "image_convolution"
   ) {
     throw new Error(
       `Unsupported PoUW task: ${job.task}`,
@@ -488,6 +642,91 @@ verifyPrismPoUWJob(
       );
     }
   } else if (
+    job.task ===
+    "image_convolution"
+  ) {
+    if (!job.inputB) {
+      throw new Error(
+        "Image convolution requires a kernel.",
+      );
+    }
+
+    validatePoUWVector(
+      job.inputB,
+      "kernel",
+    );
+
+    const {
+      rows,
+      cols,
+      kernelSize,
+    } =
+      convolutionDimensions(
+        job,
+      );
+
+    const expectedImage =
+      checkedMultiply(
+        rows,
+        cols,
+        "Convolution image size",
+      );
+
+    const expectedKernel =
+      checkedMultiply(
+        kernelSize,
+        kernelSize,
+        "Convolution kernel size",
+      );
+
+    const outputRows =
+      rows -
+      kernelSize +
+      1;
+
+    const outputCols =
+      cols -
+      kernelSize +
+      1;
+
+    const expectedOutput =
+      checkedMultiply(
+        outputRows,
+        outputCols,
+        "Convolution output size",
+      );
+
+    if (
+      expectedImage >
+        MAX_MATRIX_ELEMENTS ||
+      expectedKernel >
+        MAX_MATRIX_ELEMENTS ||
+      expectedOutput >
+        MAX_MATRIX_ELEMENTS
+    ) {
+      throw new Error(
+        "Image convolution exceeds the PoUW size limit.",
+      );
+    }
+
+    if (
+      job.input.length !==
+      expectedImage
+    ) {
+      throw new Error(
+        "Image convolution has an invalid image size.",
+      );
+    }
+
+    if (
+      job.inputB.length !==
+      expectedKernel
+    ) {
+      throw new Error(
+        "Image convolution has an invalid kernel size.",
+      );
+    }
+  } else if (
     job.inputB &&
     job.inputB.length > 0
   ) {
@@ -567,8 +806,12 @@ function computeMatrixMultiply(
 
         const product =
           checkedMultiply(
-            job.input[aIndex],
-            valuesB[bIndex],
+            job.input[
+              aIndex
+            ],
+            valuesB[
+              bIndex
+            ],
             "PoUW matrix",
           );
 
@@ -584,8 +827,112 @@ function computeMatrixMultiply(
         row * colsB +
         col;
 
-      output[outputIndex] =
-        cell;
+      output[
+        outputIndex
+      ] = cell;
+    }
+  }
+
+  return output;
+}
+
+function computeImageConvolution(
+  job: PrismPoUWJob,
+): number[] {
+  const kernel =
+    job.inputB!;
+
+  const {
+    rows,
+    cols,
+    kernelSize,
+  } =
+    convolutionDimensions(
+      job,
+    );
+
+  const outputRows =
+    rows -
+    kernelSize +
+    1;
+
+  const outputCols =
+    cols -
+    kernelSize +
+    1;
+
+  const output =
+    new Array<number>(
+      outputRows *
+        outputCols,
+    ).fill(0);
+
+  for (
+    let outRow = 0;
+    outRow < outputRows;
+    outRow += 1
+  ) {
+    for (
+      let outCol = 0;
+      outCol < outputCols;
+      outCol += 1
+    ) {
+      let cell = 0;
+
+      for (
+        let kernelRow = 0;
+        kernelRow <
+        kernelSize;
+        kernelRow += 1
+      ) {
+        for (
+          let kernelCol = 0;
+          kernelCol <
+          kernelSize;
+          kernelCol += 1
+        ) {
+          const imageIndex =
+            (
+              outRow +
+              kernelRow
+            ) *
+              cols +
+            outCol +
+            kernelCol;
+
+          const kernelIndex =
+            kernelRow *
+              kernelSize +
+            kernelCol;
+
+          const product =
+            checkedMultiply(
+              job.input[
+                imageIndex
+              ],
+              kernel[
+                kernelIndex
+              ],
+              "PoUW convolution",
+            );
+
+          cell =
+            checkedAdd(
+              cell,
+              product,
+              "PoUW convolution",
+            );
+        }
+      }
+
+      const outputIndex =
+        outRow *
+          outputCols +
+        outCol;
+
+      output[
+        outputIndex
+      ] = cell;
     }
   }
 
@@ -602,7 +949,10 @@ computePrismPoUW(
     case "sum_squares": {
       let result = 0;
 
-      for (const value of job.input) {
+      for (
+        const value
+        of job.input
+      ) {
         const square =
           checkedMultiply(
             value,
@@ -629,13 +979,18 @@ computePrismPoUW(
 
       for (
         let index = 0;
-        index < job.input.length;
+        index <
+        job.input.length;
         index += 1
       ) {
         const product =
           checkedMultiply(
-            job.input[index],
-            valuesB[index],
+            job.input[
+              index
+            ],
+            valuesB[
+              index
+            ],
             "PoUW",
           );
 
@@ -653,8 +1008,13 @@ computePrismPoUW(
     case "prime_count": {
       let count = 0;
 
-      for (const value of job.input) {
-        if (isPrime(value)) {
+      for (
+        const value
+        of job.input
+      ) {
+        if (
+          isPrime(value)
+        ) {
           count += 1;
         }
       }
@@ -663,7 +1023,14 @@ computePrismPoUW(
     }
 
     case "matrix_multiply":
-      return computeMatrixMultiply(job);
+      return computeMatrixMultiply(
+        job,
+      );
+
+    case "image_convolution":
+      return computeImageConvolution(
+        job,
+      );
 
     default:
       throw new Error(
@@ -731,9 +1098,13 @@ signPrismPoUWProof(
     );
   }
 
-  if (!Array.isArray(result)) {
+  if (
+    !Array.isArray(result)
+  ) {
     if (
-      !Number.isSafeInteger(result) ||
+      !Number.isSafeInteger(
+        result,
+      ) ||
       result < 0
     ) {
       throw new Error(
@@ -757,21 +1128,22 @@ signPrismPoUWProof(
     );
   }
 
-  const matrixResult =
+  const vectorResult =
     Array.isArray(result)
       ? [...result]
       : undefined;
 
-  const scalarResult: number =
-    Array.isArray(result)
-      ? 0
-      : result;
+  const scalarResult:
+    number =
+      Array.isArray(result)
+        ? 0
+        : result;
 
   const outputHash =
-    matrixResult
+    vectorResult
       ? hashText(
           JSON.stringify(
-            matrixResult,
+            vectorResult,
           ),
         )
       : hashText(
@@ -787,7 +1159,9 @@ signPrismPoUWProof(
     job.id,
     wallet.address,
     wallet.publicKey,
-    String(scalarResult),
+    String(
+      scalarResult,
+    ),
     outputHash,
     String(score),
   ].join("|");
@@ -795,9 +1169,15 @@ signPrismPoUWProof(
   const proofId =
     hashText(payload);
 
+  /*
+   * Synchronous noble-curves signing only.
+   * No WebCrypto digest bridge is involved.
+   */
   const signature =
-    ed.sign(
-      utf8ToBytes(proofId),
+    ed25519.sign(
+      utf8ToBytes(
+        proofId,
+      ),
       secretKey,
     );
 
@@ -813,11 +1193,13 @@ signPrismPoUWProof(
     result:
       scalarResult,
     resultValues:
-      matrixResult,
+      vectorResult,
     outputHash,
     score,
     proofId,
     signature:
-      bytesToHex(signature),
+      bytesToHex(
+        signature,
+      ),
   };
 }
