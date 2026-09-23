@@ -1,4 +1,4 @@
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
   useCallback,
   useEffect,
@@ -19,34 +19,51 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PRISM_API } from "../api/client";
 import type { PrismWorkEntry } from "../api/types";
+import type {
+  PrismPoUWJob,
+  PrismPoUWResult,
+} from "../crypto/prismWallet";
+import {
+  computePrismPoUW,
+  getOrCreatePrismWallet,
+  signPrismPoUWProof,
+} from "../crypto/prismWallet";
 
-type MineJob = {
-  id: string;
-  worker: string;
-  task: string;
-  input: number[];
-  difficulty: string;
-  reward: number;
-  status: string;
-  createdAt: string;
-  result?: number;
-  block?: number;
+import {
+  createComputeReceipt,
+} from "../types/computeReceipt";
+
+type MineJob = Omit<
+  PrismPoUWJob,
+  "input" | "inputB"
+> & {
+  input: number[] | null;
+  inputB?: number[] | null;
 };
 
 type MineStartResponse = {
   job: MineJob;
 };
 
+type MineReceiptProof =
+  PrismWorkEntry & {
+    taskId: string;
+    workerAddress: string;
+    resultValues?: number[];
+    outputHash: string;
+  };
+
 type MineSubmitResponse = {
   verified: boolean;
   reward: number;
   block: number;
   totalSupply: number;
-  proof?: PrismWorkEntry;
+  proof?: MineReceiptProof;
 };
 
 type NetworkStatus = {
   network: string;
+  chainId: string;
   height: number;
   blocks: number;
   validators: number;
@@ -83,6 +100,14 @@ type MinerPhase =
   | "submitting"
   | "completed"
   | "error";
+
+const SUPPORTED_LOCAL_TASKS = new Set([
+  "sum_squares",
+  "dot_product",
+  "prime_count",
+  "matrix_multiply",
+  "image_convolution",
+]);
 
 async function requestJson<T>(
   path: string,
@@ -123,14 +148,6 @@ async function requestJson<T>(
   return body as T;
 }
 
-function sumSquares(values: number[]) {
-  return values.reduce(
-    (total, value) =>
-      total + value * value,
-    0,
-  );
-}
-
 function mineErrorMessage(
   error: unknown,
   fallback: string,
@@ -167,6 +184,335 @@ function formatTask(task: string) {
     .toUpperCase();
 }
 
+function numericInput(
+  values: number[] | null | undefined,
+): number[] {
+  return Array.isArray(values)
+    ? values
+    : [];
+}
+
+function hasNumericInput(job: MineJob) {
+  return (
+    Array.isArray(job.input) &&
+    job.input.length > 0
+  );
+}
+
+function canComputeLocally(job: MineJob) {
+  if (!SUPPORTED_LOCAL_TASKS.has(job.task)) {
+    return false;
+  }
+
+  if (!hasNumericInput(job)) {
+    return false;
+  }
+
+  if (
+    job.task === "dot_product" ||
+    job.task === "matrix_multiply" ||
+    job.task === "image_convolution"
+  ) {
+    return (
+      Array.isArray(job.inputB) &&
+      job.inputB.length > 0
+    );
+  }
+
+  return true;
+}
+
+function normalizeJobForCrypto(
+  job: MineJob,
+): PrismPoUWJob {
+  if (!SUPPORTED_LOCAL_TASKS.has(job.task)) {
+    throw new Error(
+      `Unsupported mobile PoUW workload: ${job.task}.`,
+    );
+  }
+
+  if (
+    !Array.isArray(job.input) ||
+    job.input.length === 0
+  ) {
+    throw new Error(
+      `PoUW workload "${job.task}" contains no numeric input. ` +
+        "The node returned input=null or an empty input, so this workload is not supported by the current mobile miner yet.",
+    );
+  }
+
+  if (
+    (
+      job.task === "dot_product" ||
+      job.task === "matrix_multiply" ||
+      job.task === "image_convolution"
+    ) &&
+    (
+      !Array.isArray(job.inputB) ||
+      job.inputB.length === 0
+    )
+  ) {
+    throw new Error(
+      `PoUW workload "${job.task}" requires a second numeric input.`,
+    );
+  }
+
+  return {
+    ...job,
+    input: job.input,
+    inputB: Array.isArray(job.inputB)
+      ? job.inputB
+      : undefined,
+  };
+}
+
+function workUnitsForJob(
+  job: MineJob,
+): number {
+  const inputA = numericInput(job.input);
+  const inputB = numericInput(job.inputB);
+
+  if (job.task === "dot_product") {
+    return inputA.length + inputB.length;
+  }
+
+  if (job.task === "matrix_multiply") {
+    return (
+      Math.max(0, job.rowsA ?? 0) *
+      Math.max(0, job.colsA ?? 0) *
+      Math.max(0, job.colsB ?? 0)
+    );
+  }
+
+  if (job.task === "image_convolution") {
+    const rows = Math.max(
+      0,
+      job.rowsA ?? 0,
+    );
+
+    const cols = Math.max(
+      0,
+      job.colsA ?? 0,
+    );
+
+    const kernelSize = Math.max(
+      0,
+      job.colsB ?? 0,
+    );
+
+    if (
+      rows === 0 ||
+      cols === 0 ||
+      kernelSize === 0
+    ) {
+      return 0;
+    }
+
+    const outputRows = Math.max(
+      0,
+      rows - kernelSize + 1,
+    );
+
+    const outputCols = Math.max(
+      0,
+      cols - kernelSize + 1,
+    );
+
+    return (
+      outputRows *
+      outputCols *
+      kernelSize *
+      kernelSize
+    );
+  }
+
+  return inputA.length;
+}
+
+function formatMatrix(
+  values: number[] | null | undefined,
+  rows?: number,
+  cols?: number,
+): string {
+  const safeValues =
+    numericInput(values);
+
+  if (safeValues.length === 0) {
+    return "NO NUMERIC INPUT";
+  }
+
+  if (
+    !rows ||
+    !cols ||
+    safeValues.length !== rows * cols
+  ) {
+    return `[${safeValues.join(", ")}]`;
+  }
+
+  const lines: string[] = [];
+
+  for (
+    let row = 0;
+    row < rows;
+    row += 1
+  ) {
+    const offset = row * cols;
+
+    lines.push(
+      `[${safeValues
+        .slice(
+          offset,
+          offset + cols,
+        )
+        .join(", ")}]`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function formatInput(
+  values: number[] | null | undefined,
+): string {
+  const safeValues =
+    numericInput(values);
+
+  if (safeValues.length === 0) {
+    return "NO NUMERIC INPUT";
+  }
+
+  return `[${safeValues.join(", ")}]`;
+}
+
+function formatPoUWResult(
+  result: PrismPoUWResult,
+  job: MineJob,
+): string {
+  if (!Array.isArray(result)) {
+    return String(result);
+  }
+
+  if (
+    job.task === "matrix_multiply"
+  ) {
+    return formatMatrix(
+      result,
+      job.rowsA,
+      job.colsB,
+    );
+  }
+
+  if (
+    job.task === "image_convolution"
+  ) {
+    const rows =
+      job.rowsA ?? 0;
+
+    const cols =
+      job.colsA ?? 0;
+
+    const kernelSize =
+      job.colsB ?? 0;
+
+    const outputRows =
+      rows - kernelSize + 1;
+
+    const outputCols =
+      cols - kernelSize + 1;
+
+    return formatMatrix(
+      result,
+      outputRows > 0
+        ? outputRows
+        : undefined,
+      outputCols > 0
+        ? outputCols
+        : undefined,
+    );
+  }
+
+  return `[${result.join(", ")}]`;
+}
+
+function inputALabel(
+  job: MineJob,
+) {
+  if (
+    job.task === "matrix_multiply"
+  ) {
+    return `MATRIX A (${job.rowsA ?? "?"}x${job.colsA ?? "?"})`;
+  }
+
+  if (
+    job.task === "image_convolution"
+  ) {
+    return `IMAGE (${job.rowsA ?? "?"}x${job.colsA ?? "?"})`;
+  }
+
+  return "INPUT A";
+}
+
+function inputBLabel(
+  job: MineJob,
+) {
+  if (
+    job.task === "matrix_multiply"
+  ) {
+    return `MATRIX B (${job.colsA ?? "?"}x${job.colsB ?? "?"})`;
+  }
+
+  if (
+    job.task === "image_convolution"
+  ) {
+    return `KERNEL (${job.colsB ?? "?"}x${job.colsB ?? "?"})`;
+  }
+
+  return "INPUT B";
+}
+
+function formattedInputA(
+  job: MineJob,
+) {
+  if (
+    job.task === "matrix_multiply" ||
+    job.task === "image_convolution"
+  ) {
+    return formatMatrix(
+      job.input,
+      job.rowsA,
+      job.colsA,
+    );
+  }
+
+  return formatInput(job.input);
+}
+
+function formattedInputB(
+  job: MineJob,
+) {
+  if (
+    job.task === "matrix_multiply"
+  ) {
+    return formatMatrix(
+      job.inputB,
+      job.colsA,
+      job.colsB,
+    );
+  }
+
+  if (
+    job.task === "image_convolution"
+  ) {
+    return formatMatrix(
+      job.inputB,
+      job.colsB,
+      job.colsB,
+    );
+  }
+
+  return formatInput(job.inputB);
+}
+
 export default function MineScreen() {
   const [network, setNetwork] =
     useState<NetworkStatus | null>(null);
@@ -178,7 +524,9 @@ export default function MineScreen() {
     useState<MineJob | null>(null);
 
   const [result, setResult] =
-    useState<number | null>(null);
+    useState<PrismPoUWResult | null>(
+      null,
+    );
 
   const [
     rewardedBlock,
@@ -364,6 +712,11 @@ export default function MineScreen() {
     phase === "computing" ||
     phase === "submitting";
 
+  const localJobSupported =
+    job
+      ? canComputeLocally(job)
+      : false;
+
   async function startWork() {
     if (
       !connected ||
@@ -382,16 +735,51 @@ export default function MineScreen() {
       setRewardedBlock(null);
       setRewardedAmount(null);
 
+      const wallet =
+        await getOrCreatePrismWallet();
+
+      console.log(
+        "[Prism Mine] wallet ready",
+        wallet.address,
+      );
+
       const response =
         await requestJson<MineStartResponse>(
           "/mine/start",
           {
             method: "POST",
             body: JSON.stringify({
-              worker: "Alice",
+              worker: wallet.address,
             }),
           },
         );
+
+      if (
+        !response ||
+        !response.job
+      ) {
+        throw new Error(
+          "Prism node returned an invalid mining job.",
+        );
+      }
+
+      console.log(
+        "[Prism Mine] job",
+        response.job.task,
+        {
+          id: response.job.id,
+          inputIsArray:
+            Array.isArray(
+              response.job.input,
+            ),
+          inputLength:
+            Array.isArray(
+              response.job.input,
+            )
+              ? response.job.input.length
+              : null,
+        },
+      );
 
       setJob(response.job);
       setPhase("ready");
@@ -419,19 +807,24 @@ export default function MineScreen() {
       setPhase("computing");
       setError(null);
 
-      await new Promise(
-        (resolve) =>
-          setTimeout(resolve, 650),
+      await new Promise<void>(
+        (resolve) => {
+          setTimeout(
+            resolve,
+            650,
+          );
+        },
       );
 
-      if (job.task !== "sum_squares") {
-        throw new Error(
-          `Unsupported local workload: ${job.task}`,
+      const cryptoJob =
+        normalizeJobForCrypto(
+          job,
         );
-      }
 
       const computed =
-        sumSquares(job.input);
+        computePrismPoUW(
+          cryptoJob,
+        );
 
       setResult(computed);
       setPhase("computed");
@@ -460,17 +853,63 @@ export default function MineScreen() {
       setPhase("submitting");
       setError(null);
 
+      const cryptoJob =
+        normalizeJobForCrypto(
+          job,
+        );
+
+      const signedProof =
+        await signPrismPoUWProof(
+          cryptoJob,
+          result,
+        );
+
       const response =
         await requestJson<MineSubmitResponse>(
           "/mine/submit",
           {
             method: "POST",
-            body: JSON.stringify({
-              jobId: job.id,
-              result,
-            }),
+            body: JSON.stringify(
+              signedProof,
+            ),
           },
         );
+
+      if (
+        response?.verified !== true
+      ) {
+        throw new Error(
+          "Prism node rejected the PoUW proof.",
+        );
+      }
+
+      const proof = response.proof;
+
+      if (!proof) {
+        throw new Error(
+          "Prism node verified the proof but did not return the proof receipt.",
+        );
+      }
+
+      const receipt = createComputeReceipt({
+        jobId: proof.taskId,
+        proofId: proof.proofId,
+        taskType: proof.task,
+        worker: proof.workerAddress,
+        prismChainId:
+          network?.chainId ?? "unknown",
+        result:
+          proof.resultValues?.length
+            ? proof.resultValues
+            : proof.result,
+        outputHash: proof.outputHash,
+        score: proof.score,
+        reward: response.reward,
+        verified: true,
+        createdAt:
+          new Date().toISOString(),
+        settlements: [],
+      });
 
       setRewardedBlock(
         response.block,
@@ -496,6 +935,15 @@ export default function MineScreen() {
         loadStatus(),
         loadRecentWork(),
       ]);
+
+      router.push({
+        pathname: "/receipt",
+        params: {
+          receipt: JSON.stringify(
+            receipt,
+          ),
+        },
+      });
     } catch (err) {
       setError(
         mineErrorMessage(
@@ -703,7 +1151,7 @@ export default function MineScreen() {
                 <Text
                   style={styles.orbIcon}
                 >
-                  ⚡
+                  {"\u26A1"}
                 </Text>
               </View>
             </View>
@@ -795,7 +1243,8 @@ export default function MineScreen() {
               <Text
                 style={styles.networkMeta}
               >
-                HEIGHT {network.height} ·{" "}
+                HEIGHT {network.height}{" "}
+                {"\u00B7"}{" "}
                 {network.version}
               </Text>
             </View>
@@ -918,9 +1367,7 @@ export default function MineScreen() {
               </View>
 
               <Pressable
-                disabled={
-                  !connected || busy
-                }
+                disabled={!connected || busy}
                 onPress={() =>
                   void startWork()
                 }
@@ -931,6 +1378,7 @@ export default function MineScreen() {
                     styles.buttonDisabled,
                   pressed &&
                     connected &&
+                    !busy &&
                     styles.buttonPressed,
                 ]}
               >
@@ -939,7 +1387,7 @@ export default function MineScreen() {
                     styles.primaryButtonText
                   }
                 >
-                  START WORK →
+                  START WORK {"\u2192"}
                 </Text>
               </Pressable>
             </View>
@@ -965,7 +1413,7 @@ export default function MineScreen() {
                 }
               >
                 Fetching useful work
-                from Prism node…
+                from Prism node{"\u2026"}
               </Text>
             </View>
           </View>
@@ -980,9 +1428,7 @@ export default function MineScreen() {
                 styles.jobHeader
               }
             >
-              <View
-                style={{ flex: 1 }}
-              >
+              <View style={{ flex: 1 }}>
                 <Text
                   style={styles.eyebrow}
                 >
@@ -1004,9 +1450,12 @@ export default function MineScreen() {
                 style={[
                   styles.difficultyBadge,
                   job.difficulty ===
-                  "MEDIUM"
-                    ? styles.difficultyMedium
-                    : styles.difficultyLow,
+                  "HIGH"
+                    ? styles.difficultyHigh
+                    : job.difficulty ===
+                        "MEDIUM"
+                      ? styles.difficultyMedium
+                      : styles.difficultyLow,
                 ]}
               >
                 <Text
@@ -1022,27 +1471,105 @@ export default function MineScreen() {
             <Text
               style={styles.jobId}
             >
-              {job.id} · {job.worker}
+              {job.id} {"\u00B7"} {job.worker}
             </Text>
+
+            {!localJobSupported && (
+              <View
+                style={
+                  styles.unsupportedCard
+                }
+              >
+                <Text
+                  style={
+                    styles.unsupportedTitle
+                  }
+                >
+                  WORKLOAD NOT AVAILABLE
+                  LOCALLY
+                </Text>
+
+                <Text
+                  style={
+                    styles.unsupportedText
+                  }
+                >
+                  {SUPPORTED_LOCAL_TASKS.has(
+                    job.task,
+                  )
+                    ? `The node returned "${job.task}" with input=null or missing numeric data.`
+                    : `The current mobile miner does not support "${job.task}" yet.`}
+                </Text>
+              </View>
+            )}
 
             <View
               style={styles.inputCard}
             >
+              {(job.task ===
+                "matrix_multiply" ||
+                job.task ===
+                  "image_convolution") && (
+                <Text
+                  style={[
+                    styles.inputLabel,
+                    {
+                      marginBottom: 12,
+                    },
+                  ]}
+                >
+                  {job.task ===
+                  "matrix_multiply"
+                    ? `MATRIX A ${job.rowsA ?? "?"}\u00D7${job.colsA ?? "?"} \u00B7 MATRIX B ${job.colsA ?? "?"}\u00D7${job.colsB ?? "?"}`
+                    : `IMAGE ${job.rowsA ?? "?"}\u00D7${job.colsA ?? "?"} \u00B7 KERNEL ${job.colsB ?? "?"}\u00D7${job.colsB ?? "?"}`}
+                </Text>
+              )}
+
               <Text
                 style={styles.inputLabel}
               >
-                INPUT
+                {inputALabel(job)}
               </Text>
 
               <Text
                 style={styles.inputValue}
               >
-                [
-                {job.input.join(
-                  ", ",
+                {formattedInputA(
+                  job,
                 )}
-                ]
               </Text>
+
+              {(job.task ===
+                "dot_product" ||
+                job.task ===
+                  "matrix_multiply" ||
+                job.task ===
+                  "image_convolution") && (
+                <>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      {
+                        marginTop: 16,
+                      },
+                    ]}
+                  >
+                    {inputBLabel(
+                      job,
+                    )}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.inputValue
+                    }
+                  >
+                    {formattedInputB(
+                      job,
+                    )}
+                  </Text>
+                </>
+              )}
             </View>
 
             <View
@@ -1056,7 +1583,7 @@ export default function MineScreen() {
                     styles.jobStatValue
                   }
                 >
-                  {job.input.length}
+                  {workUnitsForJob(job)}
                 </Text>
 
                 <Text
@@ -1111,12 +1638,18 @@ export default function MineScreen() {
 
             {phase === "ready" && (
               <Pressable
+                disabled={
+                  !localJobSupported
+                }
                 onPress={() =>
                   void runCompute()
                 }
                 style={({ pressed }) => [
                   styles.primaryButton,
+                  !localJobSupported &&
+                    styles.buttonDisabled,
                   pressed &&
+                    localJobSupported &&
                     styles.buttonPressed,
                 ]}
               >
@@ -1125,7 +1658,9 @@ export default function MineScreen() {
                     styles.primaryButtonText
                   }
                 >
-                  RUN COMPUTE →
+                  {localJobSupported
+                    ? `RUN COMPUTE \u2192`
+                    : "UNSUPPORTED WORKLOAD"}
                 </Text>
               </Pressable>
             )}
@@ -1147,8 +1682,8 @@ export default function MineScreen() {
                     styles.computingText
                   }
                 >
-                  Computing sum of
-                  squares on device…
+                  Computing useful workload
+                  on device{"\u2026"}
                 </Text>
               </View>
             )}
@@ -1174,7 +1709,10 @@ export default function MineScreen() {
                         styles.resultValue
                       }
                     >
-                      {result}
+                      {formatPoUWResult(
+                        result,
+                        job,
+                      )}
                     </Text>
                   </View>
 
@@ -1190,9 +1728,7 @@ export default function MineScreen() {
                     />
 
                     <View
-                      style={{
-                        flex: 1,
-                      }}
+                      style={{ flex: 1 }}
                     >
                       <Text
                         style={
@@ -1207,9 +1743,9 @@ export default function MineScreen() {
                           styles.proofReadyText
                         }
                       >
-                        Result {result} is
-                        ready for node
-                        verification.
+                        Result computed
+                        locally and ready for
+                        node verification.
                       </Text>
                     </View>
                   </View>
@@ -1231,7 +1767,8 @@ export default function MineScreen() {
                         styles.primaryButtonText
                       }
                     >
-                      SUBMIT PROOF →
+                      SUBMIT PROOF{" "}
+                      {"\u2192"}
                     </Text>
                   </Pressable>
                 </>
@@ -1255,7 +1792,7 @@ export default function MineScreen() {
                   }
                 >
                   Verifying proof on
-                  Prism node…
+                  Prism node{"\u2026"}
                 </Text>
               </View>
             )}
@@ -1296,7 +1833,7 @@ export default function MineScreen() {
                     Proof included in
                     block{" "}
                     {rewardedBlock ??
-                      "—"}
+                      "\u2014"}
                     .
                   </Text>
                 </Animated.View>
@@ -1318,7 +1855,8 @@ export default function MineScreen() {
                       styles.secondaryButtonText
                     }
                   >
-                    MINE NEXT JOB →
+                    MINE NEXT JOB{" "}
+                    {"\u2192"}
                   </Text>
                 </Pressable>
               </>
@@ -1428,7 +1966,8 @@ export default function MineScreen() {
                   styles.sessionStatValue
                 }
               >
-                {network?.height ?? "—"}
+                {network?.height ??
+                  "\u2014"}
               </Text>
 
               <Text
@@ -1503,14 +2042,12 @@ export default function MineScreen() {
                         styles.historyIconText
                       }
                     >
-                      ✓
+                      {"\u2713"}
                     </Text>
                   </View>
 
                   <View
-                    style={{
-                      flex: 1,
-                    }}
+                    style={{ flex: 1 }}
                   >
                     <Text
                       style={
@@ -1530,7 +2067,7 @@ export default function MineScreen() {
                       {shortId(
                         entry.proofId,
                       )}{" "}
-                      · Block{" "}
+                      {"\u00B7"} Block{" "}
                       {entry.block}
                     </Text>
                   </View>
@@ -1629,7 +2166,7 @@ export default function MineScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Prism · Useful Work Miner
+          Prism {"\u00B7"} Useful Work Miner
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -1949,6 +2486,7 @@ const styles =
       fontSize: 12,
       fontWeight: "900",
       letterSpacing: 1.2,
+      textAlign: "center",
     },
 
     secondaryButton: {
@@ -2011,6 +2549,13 @@ const styles =
         "rgba(255,190,79,0.25)",
     },
 
+    difficultyHigh: {
+      backgroundColor:
+        "rgba(255,100,110,0.08)",
+      borderColor:
+        "rgba(255,100,110,0.3)",
+    },
+
     difficultyText: {
       color: "#dce8ff",
       fontSize: 9,
@@ -2022,6 +2567,31 @@ const styles =
       color: "#566681",
       fontSize: 11,
       marginTop: 4,
+    },
+
+    unsupportedCard: {
+      marginTop: 16,
+      padding: 14,
+      borderRadius: 13,
+      backgroundColor:
+        "rgba(255,190,79,0.07)",
+      borderWidth: 1,
+      borderColor:
+        "rgba(255,190,79,0.24)",
+    },
+
+    unsupportedTitle: {
+      color: "#ffc768",
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 1,
+    },
+
+    unsupportedText: {
+      color: "#9d8967",
+      fontSize: 11,
+      lineHeight: 17,
+      marginTop: 6,
     },
 
     inputCard: {
@@ -2086,6 +2656,7 @@ const styles =
       alignItems: "center",
       gap: 12,
       padding: 16,
+      marginTop: 14,
       borderRadius: 13,
       backgroundColor:
         "rgba(64,123,220,0.08)",
@@ -2120,9 +2691,11 @@ const styles =
 
     resultValue: {
       color: "#73adff",
-      fontSize: 30,
+      fontSize: 22,
+      lineHeight: 30,
       fontWeight: "900",
-      marginTop: 4,
+      marginTop: 7,
+      textAlign: "center",
     },
 
     proofReady: {
@@ -2156,6 +2729,7 @@ const styles =
     proofReadyText: {
       color: "#6e897d",
       fontSize: 11,
+      lineHeight: 16,
       marginTop: 3,
     },
 
