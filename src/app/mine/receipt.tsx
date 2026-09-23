@@ -22,11 +22,11 @@ import {
 
 import {
   ComputeReceiptCard,
-} from "../components/ComputeReceiptCard";
+} from "../../components/ComputeReceiptCard";
 
 import type {
   ComputeReceipt,
-} from "../types/computeReceipt";
+} from "../../types/computeReceipt";
 
 function parseReceipt(
   raw: string | undefined,
