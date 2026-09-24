@@ -35,6 +35,9 @@ export type PrismPoUWJob = {
   task: string;
   input: number[];
   inputB?: number[];
+  signedValues?: number[];
+  signedValuesB?: number[];
+  biases?: number[];
   rowsA?: number;
   colsA?: number;
   colsB?: number;
@@ -232,6 +235,40 @@ function checkedAdd(
   return result;
 }
 
+function checkedSignedMultiply(
+  left: number,
+  right: number,
+  label: string,
+): number {
+  const result =
+    left * right;
+
+  if (!Number.isSafeInteger(result)) {
+    throw new Error(
+      `${label} multiplication overflow.`,
+    );
+  }
+
+  return result;
+}
+
+function checkedSignedAdd(
+  left: number,
+  right: number,
+  label: string,
+): number {
+  const result =
+    left + right;
+
+  if (!Number.isSafeInteger(result)) {
+    throw new Error(
+      `${label} addition overflow.`,
+    );
+  }
+
+  return result;
+}
+
 function validatePoUWVector(
   values: number[],
   label: string,
@@ -255,6 +292,31 @@ function validatePoUWVector(
     ) {
       throw new Error(
         `PoUW ${label} contains an invalid integer.`,
+      );
+    }
+  }
+}
+
+function validateSignedPoUWVector(
+  values: number[],
+  label: string,
+): void {
+  if (!Array.isArray(values)) {
+    throw new Error(
+      `PoUW ${label} is not an array.`,
+    );
+  }
+
+  if (values.length === 0) {
+    throw new Error(
+      `PoUW ${label} contains no input.`,
+    );
+  }
+
+  for (const value of values) {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error(
+        `PoUW ${label} contains an integer outside the mobile safe range.`,
       );
     }
   }
@@ -382,6 +444,38 @@ function expectedPoUWInputHash(
 
   if (
     job.task ===
+    "ml_inference_quantized"
+  ) {
+    if (
+      !job.signedValues ||
+      !job.signedValuesB ||
+      !job.biases
+    ) {
+      throw new Error(
+        "Quantized ML inference requires signed inputs, weights, and biases.",
+      );
+    }
+
+    const {
+      rowsA: batchSize,
+      colsA: features,
+      colsB: classes,
+    } = matrixDimensions(job);
+
+    return hashText(
+      JSON.stringify({
+        batch_size: batchSize,
+        features,
+        classes,
+        inputs: job.signedValues,
+        weights: job.signedValuesB,
+        biases: job.biases,
+      }),
+    );
+  }
+
+  if (
+    job.task ===
     "ml_inference_batch"
   ) {
     if (!job.inputB) {
@@ -499,6 +593,27 @@ function scorePrismPoUW(
 
   if (
     job.task ===
+    "ml_inference_quantized"
+  ) {
+    const {
+      rowsA: batchSize,
+      colsA: features,
+      colsB: classes,
+    } = matrixDimensions(job);
+
+    return checkedMultiply(
+      checkedMultiply(
+        batchSize,
+        features,
+        "Quantized ML work units",
+      ),
+      classes,
+      "Quantized ML work units",
+    );
+  }
+
+  if (
+    job.task ===
     "image_convolution"
   ) {
     const {
@@ -587,17 +702,23 @@ verifyPrismPoUWJob(
     job.task !== "prime_count" &&
     job.task !== "matrix_multiply" &&
     job.task !== "image_convolution" &&
-    job.task !== "ml_inference_batch"
+    job.task !== "ml_inference_batch" &&
+    job.task !== "ml_inference_quantized"
   ) {
     throw new Error(
       `Unsupported PoUW task: ${job.task}`,
     );
   }
 
-  validatePoUWVector(
-    job.input,
-    "input",
-  );
+  if (
+    job.task !==
+    "ml_inference_quantized"
+  ) {
+    validatePoUWVector(
+      job.input,
+      "input",
+    );
+  }
 
   if (job.task === "dot_product") {
     if (!job.inputB) {
@@ -765,6 +886,119 @@ verifyPrismPoUWJob(
         `ML inference expects ${expectedWeights} weight values, got ${job.inputB.length}.`,
       );
     }
+  } else if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    if (
+      !job.signedValues ||
+      !job.signedValuesB ||
+      !job.biases
+    ) {
+      throw new Error(
+        "Quantized ML inference requires signed inputs, weights, and biases.",
+      );
+    }
+
+    validateSignedPoUWVector(
+      job.signedValues,
+      "quantized inputs",
+    );
+
+    validateSignedPoUWVector(
+      job.signedValuesB,
+      "quantized weights",
+    );
+
+    validateSignedPoUWVector(
+      job.biases,
+      "quantized biases",
+    );
+
+    if (
+      job.input.length !== 0 ||
+      (job.inputB?.length ?? 0) !== 0
+    ) {
+      throw new Error(
+        "Quantized ML inference must use signed values.",
+      );
+    }
+
+    const {
+      rowsA: batchSize,
+      colsA: features,
+      colsB: classes,
+    } = matrixDimensions(job);
+
+    const expectedInputs =
+      checkedMultiply(
+        batchSize,
+        features,
+        "Quantized ML input size",
+      );
+
+    const expectedWeights =
+      checkedMultiply(
+        classes,
+        features,
+        "Quantized ML weight size",
+      );
+
+    const workUnits =
+      checkedMultiply(
+        expectedInputs,
+        classes,
+        "Quantized ML work units",
+      );
+
+    if (
+      expectedInputs >
+        MAX_MATRIX_ELEMENTS ||
+      expectedWeights >
+        MAX_MATRIX_ELEMENTS ||
+      batchSize >
+        MAX_MATRIX_ELEMENTS ||
+      classes >
+        MAX_MATRIX_ELEMENTS
+    ) {
+      throw new Error(
+        "Quantized ML inference task exceeds maximum size.",
+      );
+    }
+
+    if (workUnits > 1_048_576) {
+      throw new Error(
+        "Quantized ML inference task exceeds maximum work units.",
+      );
+    }
+
+    if (
+      job.signedValues.length !==
+      expectedInputs
+    ) {
+      throw new Error(
+        `Quantized ML expects ${expectedInputs} input values, got ${job.signedValues.length}.`,
+      );
+    }
+
+    if (
+      job.signedValuesB.length !==
+      expectedWeights
+    ) {
+      throw new Error(
+        `Quantized ML expects ${expectedWeights} weight values, got ${job.signedValuesB.length}.`,
+      );
+    }
+
+    if (
+      job.biases.length !==
+      classes
+    ) {
+      throw new Error(
+        `Quantized ML expects ${classes} biases, got ${job.biases.length}.`,
+      );
+    }
+
   } else if (
     job.task ===
     "image_convolution"
@@ -1140,6 +1374,91 @@ function computeMLInferenceBatch(
   return predictions;
 }
 
+function computeMLInferenceQuantized(
+  job: PrismPoUWJob,
+): number[] {
+  const inputs =
+    job.signedValues!;
+
+  const weights =
+    job.signedValuesB!;
+
+  const biases =
+    job.biases!;
+
+  const {
+    rowsA: batchSize,
+    colsA: features,
+    colsB: classes,
+  } = matrixDimensions(job);
+
+  const predictions =
+    new Array<number>(
+      batchSize,
+    ).fill(0);
+
+  for (
+    let sample = 0;
+    sample < batchSize;
+    sample += 1
+  ) {
+    let bestClass = 0;
+    let bestScore = 0;
+
+    for (
+      let classIndex = 0;
+      classIndex < classes;
+      classIndex += 1
+    ) {
+      let score =
+        biases[classIndex];
+
+      for (
+        let feature = 0;
+        feature < features;
+        feature += 1
+      ) {
+        const inputIndex =
+          sample * features +
+          feature;
+
+        const weightIndex =
+          classIndex * features +
+          feature;
+
+        const product =
+          checkedSignedMultiply(
+            inputs[inputIndex],
+            weights[weightIndex],
+            "Quantized ML inference",
+          );
+
+        score =
+          checkedSignedAdd(
+            score,
+            product,
+            "Quantized ML inference",
+          );
+      }
+
+      // Strict > keeps the lowest
+      // class index on equal scores.
+      if (
+        classIndex === 0 ||
+        score > bestScore
+      ) {
+        bestClass = classIndex;
+        bestScore = score;
+      }
+    }
+
+    predictions[sample] =
+      bestClass;
+  }
+
+  return predictions;
+}
+
 export function
 computePrismPoUW(
   job: PrismPoUWJob,
@@ -1230,6 +1549,11 @@ computePrismPoUW(
 
     case "ml_inference_batch":
       return computeMLInferenceBatch(
+        job,
+      );
+
+    case "ml_inference_quantized":
+      return computeMLInferenceQuantized(
         job,
       );
 

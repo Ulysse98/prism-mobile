@@ -110,6 +110,7 @@ const SUPPORTED_LOCAL_TASKS = new Set([
   "matrix_multiply",
   "image_convolution",
   "ml_inference_batch",
+  "ml_inference_quantized",
 ]);
 
 async function requestJson<T>(
@@ -205,6 +206,16 @@ function numericInput(
 }
 
 function hasNumericInput(job: MineJob) {
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return (
+      Array.isArray(job.signedValues) &&
+      job.signedValues.length > 0
+    );
+  }
+
   return (
     Array.isArray(job.input) &&
     job.input.length > 0
@@ -218,6 +229,18 @@ function canComputeLocally(job: MineJob) {
 
   if (!hasNumericInput(job)) {
     return false;
+  }
+
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return (
+      Array.isArray(job.signedValuesB) &&
+      job.signedValuesB.length > 0 &&
+      Array.isArray(job.biases) &&
+      job.biases.length > 0
+    );
   }
 
   if (
@@ -242,6 +265,33 @@ function normalizeJobForCrypto(
     throw new Error(
       `Unsupported mobile PoUW workload: ${job.task}.`,
     );
+  }
+
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    if (
+      !Array.isArray(job.signedValues) ||
+      job.signedValues.length === 0 ||
+      !Array.isArray(job.signedValuesB) ||
+      job.signedValuesB.length === 0 ||
+      !Array.isArray(job.biases) ||
+      job.biases.length === 0
+    ) {
+      throw new Error(
+        "Quantized ML workload is missing signed inputs, weights, or biases.",
+      );
+    }
+
+    return {
+      ...job,
+      input: [],
+      inputB: undefined,
+      signedValues: job.signedValues,
+      signedValuesB: job.signedValuesB,
+      biases: job.biases,
+    };
   }
 
   if (
@@ -299,6 +349,17 @@ function workUnitsForJob(
   }
 
   if (job.task === "ml_inference_batch") {
+    return (
+      Math.max(0, job.rowsA ?? 0) *
+      Math.max(0, job.colsA ?? 0) *
+      Math.max(0, job.colsB ?? 0)
+    );
+  }
+
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
     return (
       Math.max(0, job.rowsA ?? 0) *
       Math.max(0, job.colsA ?? 0) *
