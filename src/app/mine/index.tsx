@@ -532,6 +532,13 @@ function inputALabel(
     return `IMAGE (${job.rowsA ?? "?"}x${job.colsA ?? "?"})`;
   }
 
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return `SIGNED INPUT (${job.rowsA ?? "?"}×${job.colsA ?? "?"})`;
+  }
+
   return "INPUT A";
 }
 
@@ -556,6 +563,17 @@ function inputBLabel(
 function formattedInputA(
   job: MineJob,
 ) {
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return formatMatrix(
+      job.signedValues,
+      job.rowsA,
+      job.colsA,
+    );
+  }
+
   if (
     job.task === "matrix_multiply" ||
     job.task === "image_convolution"
