@@ -557,6 +557,13 @@ function inputBLabel(
     return `KERNEL (${job.colsB ?? "?"}x${job.colsB ?? "?"})`;
   }
 
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return `SIGNED WEIGHTS (${job.colsB ?? "?"}×${job.colsA ?? "?"})`;
+  }
+
   return "INPUT B";
 }
 
@@ -591,6 +598,17 @@ function formattedInputA(
 function formattedInputB(
   job: MineJob,
 ) {
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return formatMatrix(
+      job.signedValuesB,
+      job.colsB,
+      job.colsA,
+    );
+  }
+
   if (
     job.task === "matrix_multiply"
   ) {
@@ -1671,7 +1689,9 @@ export default function MineScreen() {
                 job.task ===
                   "matrix_multiply" ||
                 job.task ===
-                  "image_convolution") && (
+                  "image_convolution" ||
+                job.task ===
+                  "ml_inference_quantized") && (
                 <>
                   <Text
                     style={[
@@ -1693,6 +1713,32 @@ export default function MineScreen() {
                   >
                     {formattedInputB(
                       job,
+                    )}
+                  </Text>
+                </>
+              )}
+
+              {job.task ===
+                "ml_inference_quantized" && (
+                <>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      {
+                        marginTop: 16,
+                      },
+                    ]}
+                  >
+                    BIASES
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.inputValue
+                    }
+                  >
+                    {formatInput(
+                      job.biases,
                     )}
                   </Text>
                 </>
