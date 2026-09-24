@@ -109,6 +109,8 @@ const SUPPORTED_LOCAL_TASKS = new Set([
   "prime_count",
   "matrix_multiply",
   "image_convolution",
+  "ml_inference_batch",
+  "ml_inference_quantized",
 ]);
 
 async function requestJson<T>(
@@ -204,6 +206,16 @@ function numericInput(
 }
 
 function hasNumericInput(job: MineJob) {
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return (
+      Array.isArray(job.signedValues) &&
+      job.signedValues.length > 0
+    );
+  }
+
   return (
     Array.isArray(job.input) &&
     job.input.length > 0
@@ -220,9 +232,22 @@ function canComputeLocally(job: MineJob) {
   }
 
   if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return (
+      Array.isArray(job.signedValuesB) &&
+      job.signedValuesB.length > 0 &&
+      Array.isArray(job.biases) &&
+      job.biases.length > 0
+    );
+  }
+
+  if (
     job.task === "dot_product" ||
     job.task === "matrix_multiply" ||
-    job.task === "image_convolution"
+    job.task === "image_convolution" ||
+    job.task === "ml_inference_batch"
   ) {
     return (
       Array.isArray(job.inputB) &&
@@ -243,6 +268,33 @@ function normalizeJobForCrypto(
   }
 
   if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    if (
+      !Array.isArray(job.signedValues) ||
+      job.signedValues.length === 0 ||
+      !Array.isArray(job.signedValuesB) ||
+      job.signedValuesB.length === 0 ||
+      !Array.isArray(job.biases) ||
+      job.biases.length === 0
+    ) {
+      throw new Error(
+        "Quantized ML workload is missing signed inputs, weights, or biases.",
+      );
+    }
+
+    return {
+      ...job,
+      input: [],
+      inputB: undefined,
+      signedValues: job.signedValues,
+      signedValuesB: job.signedValuesB,
+      biases: job.biases,
+    };
+  }
+
+  if (
     !Array.isArray(job.input) ||
     job.input.length === 0
   ) {
@@ -256,7 +308,8 @@ function normalizeJobForCrypto(
     (
       job.task === "dot_product" ||
       job.task === "matrix_multiply" ||
-      job.task === "image_convolution"
+      job.task === "image_convolution" ||
+      job.task === "ml_inference_batch"
     ) &&
     (
       !Array.isArray(job.inputB) ||
@@ -288,6 +341,25 @@ function workUnitsForJob(
   }
 
   if (job.task === "matrix_multiply") {
+    return (
+      Math.max(0, job.rowsA ?? 0) *
+      Math.max(0, job.colsA ?? 0) *
+      Math.max(0, job.colsB ?? 0)
+    );
+  }
+
+  if (job.task === "ml_inference_batch") {
+    return (
+      Math.max(0, job.rowsA ?? 0) *
+      Math.max(0, job.colsA ?? 0) *
+      Math.max(0, job.colsB ?? 0)
+    );
+  }
+
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
     return (
       Math.max(0, job.rowsA ?? 0) *
       Math.max(0, job.colsA ?? 0) *
@@ -460,6 +532,13 @@ function inputALabel(
     return `IMAGE (${job.rowsA ?? "?"}x${job.colsA ?? "?"})`;
   }
 
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return `SIGNED INPUT (${job.rowsA ?? "?"}×${job.colsA ?? "?"})`;
+  }
+
   return "INPUT A";
 }
 
@@ -478,12 +557,30 @@ function inputBLabel(
     return `KERNEL (${job.colsB ?? "?"}x${job.colsB ?? "?"})`;
   }
 
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return `SIGNED WEIGHTS (${job.colsB ?? "?"}×${job.colsA ?? "?"})`;
+  }
+
   return "INPUT B";
 }
 
 function formattedInputA(
   job: MineJob,
 ) {
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return formatMatrix(
+      job.signedValues,
+      job.rowsA,
+      job.colsA,
+    );
+  }
+
   if (
     job.task === "matrix_multiply" ||
     job.task === "image_convolution"
@@ -501,6 +598,17 @@ function formattedInputA(
 function formattedInputB(
   job: MineJob,
 ) {
+  if (
+    job.task ===
+    "ml_inference_quantized"
+  ) {
+    return formatMatrix(
+      job.signedValuesB,
+      job.colsB,
+      job.colsA,
+    );
+  }
+
   if (
     job.task === "matrix_multiply"
   ) {
@@ -1581,7 +1689,9 @@ export default function MineScreen() {
                 job.task ===
                   "matrix_multiply" ||
                 job.task ===
-                  "image_convolution") && (
+                  "image_convolution" ||
+                job.task ===
+                  "ml_inference_quantized") && (
                 <>
                   <Text
                     style={[
@@ -1603,6 +1713,32 @@ export default function MineScreen() {
                   >
                     {formattedInputB(
                       job,
+                    )}
+                  </Text>
+                </>
+              )}
+
+              {job.task ===
+                "ml_inference_quantized" && (
+                <>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      {
+                        marginTop: 16,
+                      },
+                    ]}
+                  >
+                    BIASES
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.inputValue
+                    }
+                  >
+                    {formatInput(
+                      job.biases,
                     )}
                   </Text>
                 </>

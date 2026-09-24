@@ -229,7 +229,7 @@ export default function ReceiptScreen() {
                   styles.protocolLabel
                 }
               >
-                PRISM MOBILE / v0.42
+                PRISM MOBILE / v0.43
               </Text>
 
               <Text style={styles.heading}>

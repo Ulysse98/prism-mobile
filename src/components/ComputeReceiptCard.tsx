@@ -1,4 +1,9 @@
 import {
+  useState,
+} from "react";
+
+import {
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -20,7 +25,7 @@ function shortId(
 ): string {
   if (
     !value ||
-    value.length <= head + tail + 1
+    value.length <= head + tail + 3
   ) {
     return value;
   }
@@ -28,7 +33,7 @@ function shortId(
   return `${value.slice(
     0,
     head,
-  )}…${value.slice(-tail)}`;
+  )}...${value.slice(-tail)}`;
 }
 
 function formatTask(
@@ -47,7 +52,7 @@ function formatResult(
       result.length > 8
         ? [
             ...result.slice(0, 8),
-            "…",
+            "...",
           ]
         : result;
 
@@ -63,18 +68,39 @@ function settlementLabel(
     | undefined,
 ): string {
   if (!settlement) {
-    return "NOT ANCHORED";
+    return "Not anchored yet";
   }
 
   switch (settlement.status) {
     case "confirmed":
-      return "CONFIRMED";
+      return "Anchored";
 
     case "pending":
-      return "PENDING";
+      return "Anchoring...";
 
     case "failed":
-      return "FAILED";
+      return "Anchor failed";
+  }
+}
+
+function settlementSymbol(
+  settlement:
+    | ComputeReceiptSettlement
+    | undefined,
+): string {
+  if (!settlement) {
+    return "\u25CB";
+  }
+
+  switch (settlement.status) {
+    case "confirmed":
+      return "\u2713";
+
+    case "pending":
+      return "\u25CB";
+
+    case "failed":
+      return "\u2715";
   }
 }
 
@@ -102,6 +128,11 @@ function settlementTone(
 export function ComputeReceiptCard({
   receipt,
 }: Props) {
+  const [
+    showTechnicalDetails,
+    setShowTechnicalDetails,
+  ] = useState(false);
+
   const arbitrum =
     receipt.settlements.find(
       (entry) =>
@@ -116,191 +147,135 @@ export function ComputeReceiptCard({
 
   return (
     <View style={styles.card}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>
-            COMPUTE RECEIPT
-          </Text>
-
-          <Text style={styles.title}>
-            PoUW VERIFIED WORK
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.verifiedBadge,
-            receipt.verified
-              ? styles.verifiedBadgeOk
-              : styles.verifiedBadgeBad,
-          ]}
-        >
-          <Text
-            style={[
-              styles.verifiedText,
-              receipt.verified
-                ? styles.verifiedTextOk
-                : styles.verifiedTextBad,
-            ]}
-          >
-            {receipt.verified
-              ? "VERIFIED"
-              : "UNVERIFIED"}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.divider} />
-
-      <View style={styles.row}>
-        <Text style={styles.label}>
-          JOB
-        </Text>
-
-        <Text style={styles.value}>
-          {shortId(receipt.jobId)}
-        </Text>
-      </View>
-
-      <View style={styles.row}>
-        <Text style={styles.label}>
-          PROOF
-        </Text>
-
-        <Text style={styles.value}>
-          {shortId(receipt.proofId)}
-        </Text>
-      </View>
-
-      <View style={styles.row}>
-        <Text style={styles.label}>
-          TASK
-        </Text>
-
-        <Text style={styles.value}>
-          {formatTask(
-            receipt.taskType,
-          )}
-        </Text>
-      </View>
-
-      <View style={styles.row}>
-        <Text style={styles.label}>
-          WORKER
-        </Text>
-
-        <Text style={styles.value}>
-          {shortId(receipt.worker)}
-        </Text>
-      </View>
-
-      <View style={styles.row}>
-        <Text style={styles.label}>
-          RESULT
+      <View style={styles.hero}>
+        <Text style={styles.eyebrow}>
+          COMPUTE RECEIPT
         </Text>
 
         <Text
           style={[
-            styles.value,
-            styles.result,
+            styles.heroTitle,
+            !receipt.verified &&
+              styles.heroTitleFailed,
           ]}
         >
-          {formatResult(
-            receipt.result,
-          )}
+          {receipt.verified
+            ? "\u2713 COMPUTE VERIFIED"
+            : "\u2715 VERIFICATION FAILED"}
+        </Text>
+
+        <Text style={styles.heroText}>
+          {receipt.verified
+            ? "Your useful work was verified by the Prism network."
+            : "Prism could not verify this computation."}
         </Text>
       </View>
 
-      <View style={styles.row}>
-        <Text style={styles.label}>
-          OUTPUT HASH
-        </Text>
-
-        <Text style={styles.value}>
-          {shortId(
-            receipt.outputHash,
-          )}
-        </Text>
-      </View>
-
-      {receipt.crossChainReceipt && (
-        <View style={styles.row}>
-          <Text style={styles.label}>
-            REGISTRY ID
+      <View style={styles.summary}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>
+            TASK
           </Text>
 
-          <Text style={styles.value}>
-            {shortId(
-              receipt.crossChainReceipt.registryId,
-              10,
-              8,
+          <Text style={styles.summaryValue}>
+            {formatTask(
+              receipt.taskType,
             )}
           </Text>
         </View>
-      )}
 
-      {receipt.score !==
-        undefined && (
-        <View style={styles.row}>
-          <Text style={styles.label}>
-            SCORE
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>
+            RESULT
           </Text>
 
-          <Text style={styles.value}>
-            {receipt.score}
-          </Text>
-        </View>
-      )}
-
-      {receipt.reward !==
-        undefined && (
-        <View style={styles.row}>
-          <Text style={styles.label}>
-            REWARD
-          </Text>
-
-          <Text style={styles.reward}>
-            {receipt.reward} PRISM
+          <Text
+            style={[
+              styles.summaryValue,
+              styles.result,
+            ]}
+          >
+            {formatResult(
+              receipt.result,
+            )}
           </Text>
         </View>
-      )}
+
+        {receipt.reward !==
+          undefined && (
+          <View style={styles.summaryRow}>
+            <Text
+              style={styles.summaryLabel}
+            >
+              REWARD
+            </Text>
+
+            <Text style={styles.reward}>
+              +{receipt.reward} PRISM
+            </Text>
+          </View>
+        )}
+      </View>
 
       <View style={styles.divider} />
 
       <Text style={styles.sectionTitle}>
-        CROSS-CHAIN RECEIPTS
+        PRISM VERIFICATION
       </Text>
 
-      <View style={styles.chains}>
-        <View
-          style={[
-            styles.chain,
-            receipt.verified
-              ? styles.chainConfirmed
-              : styles.chainFailed,
-          ]}
-        >
+      <View
+        style={[
+          styles.verificationRow,
+          receipt.verified
+            ? styles.chainConfirmed
+            : styles.chainFailed,
+        ]}
+      >
+        <Text style={styles.statusSymbol}>
+          {receipt.verified
+            ? "\u2713"
+            : "\u2715"}
+        </Text>
+
+        <View style={styles.statusCopy}>
           <Text style={styles.chainName}>
-            PRISM
+            Prism Network
           </Text>
 
           <Text style={styles.chainStatus}>
             {receipt.verified
-              ? "VERIFIED"
-              : "UNVERIFIED"}
+              ? "Computation verified"
+              : "Verification failed"}
           </Text>
         </View>
+      </View>
 
-        <View
-          style={[
-            styles.chain,
-            settlementTone(
-              arbitrum,
-            ),
-          ]}
-        >
+      <Text
+        style={[
+          styles.sectionTitle,
+          styles.externalSectionTitle,
+        ]}
+      >
+        EXTERNAL SETTLEMENT
+      </Text>
+
+      <View
+        style={[
+          styles.verificationRow,
+          settlementTone(
+            arbitrum,
+          ),
+        ]}
+      >
+        <Text style={styles.statusSymbol}>
+          {settlementSymbol(
+            arbitrum,
+          )}
+        </Text>
+
+        <View style={styles.statusCopy}>
           <Text style={styles.chainName}>
-            ARBITRUM
+            Arbitrum
           </Text>
 
           <Text style={styles.chainStatus}>
@@ -309,17 +284,25 @@ export function ComputeReceiptCard({
             )}
           </Text>
         </View>
+      </View>
 
-        <View
-          style={[
-            styles.chain,
-            settlementTone(
-              solana,
-            ),
-          ]}
-        >
+      <View
+        style={[
+          styles.verificationRow,
+          settlementTone(
+            solana,
+          ),
+        ]}
+      >
+        <Text style={styles.statusSymbol}>
+          {settlementSymbol(
+            solana,
+          )}
+        </Text>
+
+        <View style={styles.statusCopy}>
           <Text style={styles.chainName}>
-            SOLANA
+            Solana
           </Text>
 
           <Text style={styles.chainStatus}>
@@ -330,9 +313,184 @@ export function ComputeReceiptCard({
         </View>
       </View>
 
-      <Text style={styles.chainId}>
-        {receipt.prismChainId}
-      </Text>
+      <Pressable
+        onPress={() =>
+          setShowTechnicalDetails(
+            (value) => !value,
+          )
+        }
+        style={({ pressed }) => [
+          styles.detailsButton,
+          pressed &&
+            styles.detailsButtonPressed,
+        ]}
+      >
+        <Text
+          style={styles.detailsButtonText}
+        >
+          {showTechnicalDetails
+            ? "Hide technical details"
+            : "View technical details"}
+        </Text>
+
+        <Text
+          style={styles.detailsChevron}
+        >
+          {showTechnicalDetails
+            ? "\u2191"
+            : "\u2193"}
+        </Text>
+      </Pressable>
+
+      {showTechnicalDetails && (
+        <View
+          style={
+            styles.technicalDetails
+          }
+        >
+          <Text
+            style={styles.sectionTitle}
+          >
+            TECHNICAL DETAILS
+          </Text>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              JOB ID
+            </Text>
+
+            <Text style={styles.value}>
+              {shortId(
+                receipt.jobId,
+              )}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              PROOF ID
+            </Text>
+
+            <Text style={styles.value}>
+              {shortId(
+                receipt.proofId,
+              )}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              WORKER
+            </Text>
+
+            <Text style={styles.value}>
+              {shortId(
+                receipt.worker,
+              )}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              OUTPUT HASH
+            </Text>
+
+            <Text style={styles.value}>
+              {shortId(
+                receipt.outputHash,
+              )}
+            </Text>
+          </View>
+
+          {receipt.crossChainReceipt && (
+            <View style={styles.row}>
+              <Text style={styles.label}>
+                REGISTRY ID
+              </Text>
+
+              <Text
+                style={styles.value}
+              >
+                {shortId(
+                  receipt
+                    .crossChainReceipt
+                    .registryId,
+                  10,
+                  8,
+                )}
+              </Text>
+            </View>
+          )}
+
+          {receipt.score !==
+            undefined && (
+            <View style={styles.row}>
+              <Text style={styles.label}>
+                SCORE
+              </Text>
+
+              <Text style={styles.value}>
+                {receipt.score}
+              </Text>
+            </View>
+          )}
+
+          {arbitrum?.txHash && (
+            <View style={styles.row}>
+              <Text style={styles.label}>
+                ARBITRUM TX
+              </Text>
+
+              <Text style={styles.value}>
+                {shortId(
+                  arbitrum.txHash,
+                  10,
+                  8,
+                )}
+              </Text>
+            </View>
+          )}
+
+          {arbitrum?.blockNumber !==
+            undefined && (
+            <View style={styles.row}>
+              <Text style={styles.label}>
+                ARBITRUM BLOCK
+              </Text>
+
+              <Text style={styles.value}>
+                {arbitrum.blockNumber}
+              </Text>
+            </View>
+          )}
+
+          {solana?.txHash && (
+            <View style={styles.row}>
+              <Text style={styles.label}>
+                SOLANA TX
+              </Text>
+
+              <Text style={styles.value}>
+                {shortId(
+                  solana.txHash,
+                  10,
+                  8,
+                )}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              PRISM CHAIN
+            </Text>
+
+            <Text style={styles.value}>
+              {receipt.prismChainId}
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -348,12 +506,9 @@ const styles = StyleSheet.create({
       "rgba(105,153,255,0.22)",
   },
 
-  header: {
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
+  hero: {
     alignItems: "center",
-    gap: 14,
+    paddingVertical: 8,
   },
 
   eyebrow: {
@@ -363,76 +518,55 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
   },
 
-  title: {
-    color: "#eef5ff",
-    fontSize: 18,
-    fontWeight: "900",
-    marginTop: 4,
-  },
-
-  verifiedBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-  },
-
-  verifiedBadgeOk: {
-    backgroundColor:
-      "rgba(73,210,151,0.09)",
-    borderColor:
-      "rgba(73,210,151,0.35)",
-  },
-
-  verifiedBadgeBad: {
-    backgroundColor:
-      "rgba(255,100,100,0.08)",
-    borderColor:
-      "rgba(255,100,100,0.3)",
-  },
-
-  verifiedText: {
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 0.8,
-  },
-
-  verifiedTextOk: {
+  heroTitle: {
     color: "#67dca6",
+    fontSize: 21,
+    fontWeight: "900",
+    marginTop: 8,
+    textAlign: "center",
   },
 
-  verifiedTextBad: {
+  heroTitleFailed: {
     color: "#ff7e7e",
   },
 
-  divider: {
-    height: 1,
-    backgroundColor:
-      "rgba(125,158,210,0.12)",
-    marginVertical: 16,
+  heroText: {
+    color: "#71859f",
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 7,
+    textAlign: "center",
   },
 
-  row: {
+  summary: {
+    marginTop: 18,
+    borderRadius: 13,
+    padding: 14,
+    backgroundColor:
+      "rgba(91,142,221,0.05)",
+  },
+
+  summaryRow: {
     flexDirection: "row",
     justifyContent:
       "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 16,
-    marginBottom: 10,
+    marginVertical: 5,
   },
 
-  label: {
+  summaryLabel: {
     color: "#61718a",
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 1,
   },
 
-  value: {
+  summaryValue: {
     flex: 1,
-    color: "#cbd9ed",
-    fontSize: 11,
-    fontWeight: "700",
+    color: "#dce8fa",
+    fontSize: 12,
+    fontWeight: "800",
     textAlign: "right",
   },
 
@@ -446,6 +580,13 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
+  divider: {
+    height: 1,
+    backgroundColor:
+      "rgba(125,158,210,0.12)",
+    marginVertical: 18,
+  },
+
   sectionTitle: {
     color: "#778da9",
     fontSize: 9,
@@ -454,17 +595,42 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  chains: {
-    flexDirection: "row",
-    gap: 8,
+  externalSectionTitle: {
+    marginTop: 14,
   },
 
-  chain: {
-    flex: 1,
-    borderRadius: 11,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+  verificationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
     borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    marginBottom: 8,
+  },
+
+  statusSymbol: {
+    width: 26,
+    color: "#dce8fa",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+
+  statusCopy: {
+    flex: 1,
+  },
+
+  chainName: {
+    color: "#dce8fa",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  chainStatus: {
+    color: "#7489a6",
+    fontSize: 9,
+    fontWeight: "700",
+    marginTop: 3,
   },
 
   chainConfirmed: {
@@ -495,25 +661,67 @@ const styles = StyleSheet.create({
       "rgba(110,135,170,0.16)",
   },
 
-  chainName: {
-    color: "#dce8fa",
-    fontSize: 9,
+  detailsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent:
+      "space-between",
+    marginTop: 12,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor:
+      "rgba(105,153,255,0.16)",
+    backgroundColor:
+      "rgba(95,137,205,0.06)",
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+
+  detailsButtonPressed: {
+    opacity: 0.65,
+  },
+
+  detailsButtonText: {
+    color: "#8bbaff",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  detailsChevron: {
+    color: "#8bbaff",
+    fontSize: 14,
     fontWeight: "900",
-    textAlign: "center",
   },
 
-  chainStatus: {
-    color: "#7489a6",
-    fontSize: 8,
-    fontWeight: "700",
-    textAlign: "center",
-    marginTop: 4,
+  technicalDetails: {
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor:
+      "rgba(125,158,210,0.12)",
   },
 
-  chainId: {
-    color: "#42546c",
+  row: {
+    flexDirection: "row",
+    justifyContent:
+      "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 10,
+  },
+
+  label: {
+    color: "#61718a",
     fontSize: 9,
-    textAlign: "center",
-    marginTop: 14,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+
+  value: {
+    flex: 1,
+    color: "#cbd9ed",
+    fontSize: 10,
+    fontWeight: "700",
+    textAlign: "right",
   },
 });
