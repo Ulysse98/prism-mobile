@@ -109,6 +109,7 @@ const SUPPORTED_LOCAL_TASKS = new Set([
   "prime_count",
   "matrix_multiply",
   "image_convolution",
+  "ml_inference_batch",
 ]);
 
 async function requestJson<T>(
@@ -222,7 +223,8 @@ function canComputeLocally(job: MineJob) {
   if (
     job.task === "dot_product" ||
     job.task === "matrix_multiply" ||
-    job.task === "image_convolution"
+    job.task === "image_convolution" ||
+    job.task === "ml_inference_batch"
   ) {
     return (
       Array.isArray(job.inputB) &&
@@ -256,7 +258,8 @@ function normalizeJobForCrypto(
     (
       job.task === "dot_product" ||
       job.task === "matrix_multiply" ||
-      job.task === "image_convolution"
+      job.task === "image_convolution" ||
+      job.task === "ml_inference_batch"
     ) &&
     (
       !Array.isArray(job.inputB) ||
@@ -288,6 +291,14 @@ function workUnitsForJob(
   }
 
   if (job.task === "matrix_multiply") {
+    return (
+      Math.max(0, job.rowsA ?? 0) *
+      Math.max(0, job.colsA ?? 0) *
+      Math.max(0, job.colsB ?? 0)
+    );
+  }
+
+  if (job.task === "ml_inference_batch") {
     return (
       Math.max(0, job.rowsA ?? 0) *
       Math.max(0, job.colsA ?? 0) *

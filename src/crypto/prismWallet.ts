@@ -382,6 +382,33 @@ function expectedPoUWInputHash(
 
   if (
     job.task ===
+    "ml_inference_batch"
+  ) {
+    if (!job.inputB) {
+      throw new Error(
+        "ML inference batch requires model weights.",
+      );
+    }
+
+    const {
+      rowsA: batchSize,
+      colsA: features,
+      colsB: classes,
+    } = matrixDimensions(job);
+
+    return hashText(
+      JSON.stringify({
+        batch_size: batchSize,
+        features,
+        classes,
+        inputs: job.input,
+        weights: job.inputB,
+      }),
+    );
+  }
+
+  if (
+    job.task ===
     "image_convolution"
   ) {
     if (!job.inputB) {
@@ -446,6 +473,27 @@ function scorePrismPoUW(
       ),
       colsB,
       "Matrix work units",
+    );
+  }
+
+  if (
+    job.task ===
+    "ml_inference_batch"
+  ) {
+    const {
+      rowsA: batchSize,
+      colsA: features,
+      colsB: classes,
+    } = matrixDimensions(job);
+
+    return checkedMultiply(
+      checkedMultiply(
+        batchSize,
+        features,
+        "ML inference work units",
+      ),
+      classes,
+      "ML inference work units",
     );
   }
 
@@ -538,7 +586,8 @@ verifyPrismPoUWJob(
     job.task !== "dot_product" &&
     job.task !== "prime_count" &&
     job.task !== "matrix_multiply" &&
-    job.task !== "image_convolution"
+    job.task !== "image_convolution" &&
+    job.task !== "ml_inference_batch"
   ) {
     throw new Error(
       `Unsupported PoUW task: ${job.task}`,
@@ -639,6 +688,81 @@ verifyPrismPoUWJob(
     ) {
       throw new Error(
         `Matrix B expects ${expectedB} values, got ${job.inputB.length}.`,
+      );
+    }
+  } else if (
+    job.task ===
+    "ml_inference_batch"
+  ) {
+    if (!job.inputB) {
+      throw new Error(
+        "ML inference batch requires model weights.",
+      );
+    }
+
+    validatePoUWVector(
+      job.inputB,
+      "ML weights",
+    );
+
+    const {
+      rowsA: batchSize,
+      colsA: features,
+      colsB: classes,
+    } = matrixDimensions(job);
+
+    const expectedInputs =
+      checkedMultiply(
+        batchSize,
+        features,
+        "ML inference input size",
+      );
+
+    const expectedWeights =
+      checkedMultiply(
+        classes,
+        features,
+        "ML inference weight size",
+      );
+
+    const workUnits =
+      checkedMultiply(
+        expectedInputs,
+        classes,
+        "ML inference work units",
+      );
+
+    if (
+      expectedInputs > MAX_MATRIX_ELEMENTS ||
+      expectedWeights > MAX_MATRIX_ELEMENTS ||
+      batchSize > MAX_MATRIX_ELEMENTS
+    ) {
+      throw new Error(
+        "ML inference task exceeds maximum size.",
+      );
+    }
+
+    if (workUnits > 1_048_576) {
+      throw new Error(
+        "ML inference task exceeds maximum work units.",
+      );
+    }
+
+    if (
+      job.input.length !==
+      expectedInputs
+    ) {
+      throw new Error(
+        `ML inference expects ${expectedInputs} input values, got ${job.input.length}.`,
+      );
+    }
+
+    if (
+      job.inputB.length !==
+      expectedWeights
+    ) {
+      throw new Error(
+        `ML inference expects ${expectedWeights} weight values, got ${job.inputB.length}.`,
       );
     }
   } else if (
@@ -939,6 +1063,83 @@ function computeImageConvolution(
   return output;
 }
 
+function computeMLInferenceBatch(
+  job: PrismPoUWJob,
+): number[] {
+  const weights = job.inputB!;
+
+  const {
+    rowsA: batchSize,
+    colsA: features,
+    colsB: classes,
+  } = matrixDimensions(job);
+
+  const predictions =
+    new Array<number>(
+      batchSize,
+    ).fill(0);
+
+  for (
+    let sample = 0;
+    sample < batchSize;
+    sample += 1
+  ) {
+    let bestClass = 0;
+    let bestScore = 0;
+
+    for (
+      let classIndex = 0;
+      classIndex < classes;
+      classIndex += 1
+    ) {
+      let score = 0;
+
+      for (
+        let feature = 0;
+        feature < features;
+        feature += 1
+      ) {
+        const inputIndex =
+          sample * features +
+          feature;
+
+        const weightIndex =
+          classIndex * features +
+          feature;
+
+        const product =
+          checkedMultiply(
+            job.input[inputIndex],
+            weights[weightIndex],
+            "ML inference",
+          );
+
+        score =
+          checkedAdd(
+            score,
+            product,
+            "ML inference",
+          );
+      }
+
+      // Strict > intentionally preserves the lower
+      // class index when scores are tied.
+      if (
+        classIndex === 0 ||
+        score > bestScore
+      ) {
+        bestClass = classIndex;
+        bestScore = score;
+      }
+    }
+
+    predictions[sample] =
+      bestClass;
+  }
+
+  return predictions;
+}
+
 export function
 computePrismPoUW(
   job: PrismPoUWJob,
@@ -1024,6 +1225,11 @@ computePrismPoUW(
 
     case "matrix_multiply":
       return computeMatrixMultiply(
+        job,
+      );
+
+    case "ml_inference_batch":
+      return computeMLInferenceBatch(
         job,
       );
 
