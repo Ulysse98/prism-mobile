@@ -33,17 +33,78 @@ import {
 import type {
   ComputeReceipt,
   ComputeReceiptSettlement,
+  PrismCrossChainReceipt,
 } from "../../types/computeReceipt";
 
-type SettlementResponse = {
-  registryId: string;
-  settlements: ComputeReceiptSettlement[];
+type ReceiptAnchorStatus =
+  | "verified"
+  | "pending"
+  | "failed"
+  | "unavailable";
+
+type ReceiptAnchor = {
+  chain: "arbitrum" | "solana";
+  status: ReceiptAnchorStatus;
+  txHash?: string;
+  registryAddress?: string;
+  blockNumber?: number;
+  explorerUrl?: string;
 };
 
-type LiveSettlementState = {
-  registryId: string;
-  settlements: ComputeReceiptSettlement[];
+type ReceiptVerificationResponse = {
+  jobId: string;
+  proofId: string;
+  task: string;
+  worker: string;
+  reward: number;
+
+  prism: {
+    status: "verified";
+    block: number;
+    blockHash: string;
+    chainId: string;
+    genesisHash: string;
+    proofVersion: number;
+    signatureVerified: boolean;
+    contextVerified: boolean;
+  };
+
+  crossChainReceipt:
+    PrismCrossChainReceipt;
+
+  anchors: ReceiptAnchor[];
 };
+
+type LiveReceiptState = {
+  response:
+    ReceiptVerificationResponse;
+
+  settlements:
+    ComputeReceiptSettlement[];
+};
+
+function settlementFromAnchor(
+  anchor: ReceiptAnchor,
+): ComputeReceiptSettlement | null {
+  if (anchor.status === "unavailable") {
+    return null;
+  }
+
+  return {
+    chain: anchor.chain,
+    status:
+      anchor.status === "verified"
+        ? "confirmed"
+        : anchor.status,
+    txHash: anchor.txHash,
+    registryAddress:
+      anchor.registryAddress,
+    blockNumber:
+      anchor.blockNumber,
+    explorerUrl:
+      anchor.explorerUrl,
+  };
+}
 
 function parseReceipt(
   raw: string | undefined,
@@ -86,29 +147,32 @@ export default function ReceiptScreen() {
   );
 
   const [
-    liveSettlementState,
-    setLiveSettlementState,
+    liveReceiptState,
+    setLiveReceiptState,
   ] = useState<
-    LiveSettlementState | null
+    LiveReceiptState | null
   >(null);
 
   useEffect(() => {
-    const registryId =
-      receipt?.crossChainReceipt?.registryId;
+    const crossChainReceipt =
+      receipt?.crossChainReceipt;
 
-    if (!registryId) {
+    if (
+      !receipt?.jobId ||
+      !crossChainReceipt
+    ) {
       return;
     }
 
     let cancelled = false;
 
-    const loadSettlements =
+    const loadReceiptVerification =
       async () => {
         try {
           const response =
-            await getJson<SettlementResponse>(
-              `/settlements/${encodeURIComponent(
-                registryId,
+            await getJson<ReceiptVerificationResponse>(
+              `/receipts/${encodeURIComponent(
+                receipt.jobId,
               )}`,
             );
 
@@ -117,19 +181,49 @@ export default function ReceiptScreen() {
           }
 
           if (
-            response.registryId.toLowerCase() !==
-            registryId.toLowerCase()
+            response.jobId !==
+            receipt.jobId
           ) {
             throw new Error(
-              "Settlement registry ID mismatch.",
+              "Receipt job ID mismatch.",
             );
           }
 
-          setLiveSettlementState({
-            registryId:
-              response.registryId,
-            settlements:
-              response.settlements,
+          if (
+            response.proofId !==
+            receipt.proofId
+          ) {
+            throw new Error(
+              "Receipt proof ID mismatch.",
+            );
+          }
+
+          if (
+            response.crossChainReceipt.registryId
+              .toLowerCase() !==
+            crossChainReceipt.registryId
+              .toLowerCase()
+          ) {
+            throw new Error(
+              "Receipt registry ID mismatch.",
+            );
+          }
+
+          const settlements =
+            response.anchors
+              .map(
+                settlementFromAnchor,
+              )
+              .filter(
+                (
+                  settlement,
+                ): settlement is ComputeReceiptSettlement =>
+                  settlement !== null,
+              );
+
+          setLiveReceiptState({
+            response,
+            settlements,
           });
         } catch (error) {
           if (cancelled) {
@@ -137,18 +231,18 @@ export default function ReceiptScreen() {
           }
 
           console.warn(
-            "[Prism Receipt] Unable to load settlements:",
+            "[Prism Receipt] Unable to load v0.44 receipt verification:",
             error,
           );
         }
       };
 
-    void loadSettlements();
+    void loadReceiptVerification();
 
     const interval =
       setInterval(
         () => {
-          void loadSettlements();
+          void loadReceiptVerification();
         },
         5000,
       );
@@ -162,21 +256,47 @@ export default function ReceiptScreen() {
     };
   }, [receipt]);
 
-  const matchingLiveSettlements =
-    receipt?.crossChainReceipt &&
-    liveSettlementState &&
-    liveSettlementState.registryId.toLowerCase() ===
-      receipt.crossChainReceipt.registryId.toLowerCase()
-      ? liveSettlementState.settlements
-      : null;
+  const liveResponse =
+    liveReceiptState?.response;
 
   const displayReceipt =
-    receipt &&
-    matchingLiveSettlements !== null
+    receipt && liveResponse
       ? {
           ...receipt,
+
+          jobId:
+            liveResponse.jobId,
+
+          proofId:
+            liveResponse.proofId,
+
+          taskType:
+            liveResponse.task,
+
+          worker:
+            liveResponse.worker,
+
+          reward:
+            liveResponse.reward,
+
+          prismChainId:
+            liveResponse.prism.chainId,
+
+          verified:
+            liveResponse.prism.status ===
+              "verified" &&
+            liveResponse.prism
+              .signatureVerified &&
+            liveResponse.prism
+              .contextVerified,
+
+          crossChainReceipt:
+            liveResponse
+              .crossChainReceipt,
+
           settlements:
-            matchingLiveSettlements,
+            liveReceiptState
+              .settlements,
         }
       : receipt;
 
@@ -229,7 +349,7 @@ export default function ReceiptScreen() {
                   styles.protocolLabel
                 }
               >
-                PRISM MOBILE / v0.43
+                PRISM MOBILE / v0.44
               </Text>
 
               <Text style={styles.heading}>
@@ -253,9 +373,9 @@ export default function ReceiptScreen() {
                     styles.demoNoticeText
                   }
                 >
-                  Verified by the Prism node.
-                  External settlement status is
-                  shown below.
+                  Verified by Prism with live
+                  Arbitrum and Solana receipt
+                  status shown below.
                 </Text>
               </View>
 
