@@ -100,3 +100,24 @@ export type PrismReserved = {
   grants: PrismReservedGrant[];
   revocations: PrismReservedRevocation[];
 };
+
+export type PrismWalletSnapshot = {
+  name: string;
+  address: string;
+  totalBalance: number;
+  availableBalance: number;
+  lockedStake: number;
+  nonce: number;
+  humanityVerified: boolean;
+};
+
+export type PrismFaucetClaim = {
+  faucet: string;
+  recipient: string;
+  address: string;
+  amount: number;
+  txId: string;
+  block: number;
+  totalBalance: number;
+  availableBalance: number;
+};
