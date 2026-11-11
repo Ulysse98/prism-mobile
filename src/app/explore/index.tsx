@@ -1,3 +1,5 @@
+import { usePrismAppearance } from "@/theme/prism-appearance";
+import { createPrismStyleVariants, usePrismScreenStyles } from "@/theme/prism-screen-styles";
 import {
   router,
   useFocusEffect,
@@ -74,6 +76,7 @@ function StatusPill({
 }: {
   mode: ConnectionMode;
 }) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   const label =
     mode === "live"
       ? "LIVE"
@@ -129,6 +132,7 @@ function StatCard({
     | "green"
     | "gold";
 }) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   return (
     <View style={styles.statCard}>
       <Text
@@ -167,6 +171,7 @@ function SectionHeader({
     | "blue"
     | "gold";
 }) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   return (
     <View style={styles.sectionHeader}>
       <View style={{ flex: 1 }}>
@@ -199,6 +204,8 @@ function SectionHeader({
 }
 
 export default function ExploreScreen() {
+  const styles = usePrismScreenStyles(prismStyleVariants);
+  const { colors } = usePrismAppearance();
   const [dashboard, setDashboard] =
     useState<Dashboard | null>(null);
 
@@ -390,9 +397,9 @@ export default function ExploreScreen() {
             onRefresh={() =>
               void load()
             }
-            tintColor="#68a7ff"
-            colors={["#68a7ff"]}
-            progressBackgroundColor="#0b101a"
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
           />
         }
       >
@@ -1529,8 +1536,7 @@ export default function ExploreScreen() {
   );
 }
 
-const styles =
-  StyleSheet.create({
+const prismStyleVariants = createPrismStyleVariants({
     safe: {
       flex: 1,
       backgroundColor: "#05070c",

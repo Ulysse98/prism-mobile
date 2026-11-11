@@ -1,10 +1,10 @@
+import { createPrismStyleVariants, usePrismScreenStyles } from "@/theme/prism-screen-styles";
 import {
   useState,
 } from "react";
 
 import {
   Pressable,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -108,26 +108,27 @@ function settlementTone(
   settlement:
     | ComputeReceiptSettlement
     | undefined,
-) {
+): "chainIdle" | "chainConfirmed" | "chainPending" | "chainFailed" {
   if (!settlement) {
-    return styles.chainIdle;
+    return "chainIdle";
   }
 
   switch (settlement.status) {
     case "confirmed":
-      return styles.chainConfirmed;
+      return "chainConfirmed";
 
     case "pending":
-      return styles.chainPending;
+      return "chainPending";
 
     case "failed":
-      return styles.chainFailed;
+      return "chainFailed";
   }
 }
 
 export function ComputeReceiptCard({
   receipt,
 }: Props) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   const [
     showTechnicalDetails,
     setShowTechnicalDetails,
@@ -262,9 +263,9 @@ export function ComputeReceiptCard({
       <View
         style={[
           styles.verificationRow,
-          settlementTone(
+          styles[settlementTone(
             arbitrum,
-          ),
+          )],
         ]}
       >
         <Text style={styles.statusSymbol}>
@@ -289,9 +290,9 @@ export function ComputeReceiptCard({
       <View
         style={[
           styles.verificationRow,
-          settlementTone(
+          styles[settlementTone(
             solana,
-          ),
+          )],
         ]}
       >
         <Text style={styles.statusSymbol}>
@@ -495,7 +496,7 @@ export function ComputeReceiptCard({
   );
 }
 
-const styles = StyleSheet.create({
+const prismStyleVariants = createPrismStyleVariants({
   card: {
     borderRadius: 18,
     padding: 18,

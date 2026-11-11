@@ -1,3 +1,4 @@
+import { signPrismTransactionV2, verifyPrismTransactionV2, encodePrismV2SignedRequestJSON, type PrismV2TransferDraft } from "./prismTransactionV2";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import {
@@ -1732,4 +1733,91 @@ signPrismPoUWProof(
         signature,
       ),
   };
+}
+
+// V2.2C: explicitly requested local signature using an EXISTING SecureStore key.
+// Does not use loadOrCreateSecretKey; never exports the seed or submits HTTP.
+export async function signExistingPrismWalletTransferV2(
+  draft: PrismV2TransferDraft,
+): Promise<{ id: string; verified: true }> {
+  const secretKey = await loadSecretKey();
+  if (secretKey === null) {
+    throw new Error("Existing Prism wallet key unavailable; signing refused");
+  }
+  try {
+    const identity = deriveWallet(secretKey);
+    if (identity.address !== draft.from || identity.publicKey !== draft.publicKey) {
+      throw new Error("Existing device wallet does not own this transfer");
+    }
+    const signed = signPrismTransactionV2(draft, secretKey);
+    if (!verifyPrismTransactionV2(signed)) {
+      throw new Error("Local Ed25519 verification failed");
+    }
+    // Do not persist or log the signature; no HTTP submission code exists here.
+    return { id: signed.id, verified: true };
+  } finally {
+    // Best effort only: JS and SecureStore can retain other copies in memory.
+    secretKey.fill(0);
+  }
+}
+
+// V2.2D: single testnet POST. No retry, no automatic send, exact lab-only context.
+// This function can run only after the explicit manual consent in the UI,
+// the separate build-time enablement, and the Core opt-in transfer flag.
+export async function submitSinglePrismV2LabTransfer(
+  draft: PrismV2TransferDraft,
+  expectedId: string,
+): Promise<{ id: string; block: number }> {
+  if (process.env.EXPO_PUBLIC_PRISM_LAB_SEND_ENABLED !== "ENABLE_EXACT_ONE") {
+    throw new Error("Manual testnet transfer is disabled in this build");
+  }
+  if (draft.chainId !== "prism-db99573f269a98ab" ||
+      draft.genesisHash !== "00af37327a8f2b764699b14b76642bed5c21b8ab07a766e813bac99f11910a9d" ||
+      draft.from !== "prism_297ee45259340851cf341ece082b160e23eac731" ||
+      draft.to !== "prism_afe68557d263d27c974c3550391d39fa9aa1c342" ||
+      draft.amount !== "1" || draft.nonce !== "0") {
+    throw new Error("Testnet transfer rejected: unexpected fixed lab parameters");
+  }
+  const seed = await loadSecretKey();
+  if (seed === null) {
+    throw new Error("Existing device wallet key unavailable; transfer refused");
+  }
+  let wireBody: string;
+  try {
+    const identity = deriveWallet(seed);
+    if (identity.address !== draft.from || identity.publicKey !== draft.publicKey) {
+      throw new Error("Device wallet does not own the sender address");
+    }
+    const tx = signPrismTransactionV2(draft, seed);
+    if (tx.id !== expectedId || !verifyPrismTransactionV2(tx)) {
+      throw new Error("Ed25519 signature or transaction ID mismatch");
+    }
+    wireBody = encodePrismV2SignedRequestJSON(tx);
+  } finally {
+    // Best effort: this does not guarantee zeroization of runtime or native copies.
+    seed.fill(0);
+  }
+  // Exactly ONE request: do not retry, even if the response is lost.
+  const response = await fetch("http://127.0.0.1:8080/api/v1/transactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: wireBody,
+  });
+  if (response.status !== 201) {
+    throw new Error(`Core declined or did not confirm submission (HTTP ${response.status})`);
+  }
+  const data: unknown = await response.json();
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Unexpected testnet receipt format");
+  }
+  const receipt = data as Record<string, unknown>;
+  if (receipt.txId !== expectedId || receipt.chainId !== draft.chainId ||
+      receipt.from !== draft.from || receipt.to !== draft.to ||
+      receipt.amount !== 1 || receipt.status !== "locally_included" ||
+      typeof receipt.block !== "number" || !Number.isSafeInteger(receipt.block) ||
+      receipt.block < 1 || typeof receipt.blockHash !== "string" ||
+      !/^[0-9a-f]{64}$/.test(receipt.blockHash)) {
+    throw new Error("Unexpected testnet transfer receipt; verify chain before any retry");
+  }
+  return { id: expectedId, block: receipt.block };
 }

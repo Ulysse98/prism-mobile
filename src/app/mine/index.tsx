@@ -1,3 +1,5 @@
+import { usePrismAppearance } from "@/theme/prism-appearance";
+import { createPrismStyleVariants, usePrismScreenStyles } from "@/theme/prism-screen-styles";
 import { router, useFocusEffect } from "expo-router";
 import {
   useCallback,
@@ -11,7 +13,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -633,6 +634,8 @@ function formattedInputB(
 }
 
 export default function MineScreen() {
+  const styles = usePrismScreenStyles(prismStyleVariants);
+  const { colors } = usePrismAppearance();
   const [network, setNetwork] =
     useState<NetworkStatus | null>(null);
 
@@ -1225,7 +1228,7 @@ export default function MineScreen() {
             onRefresh={() =>
               void refreshAll()
             }
-            tintColor="#68a7ff"
+            tintColor={colors.accent}
           />
         }
       >
@@ -1548,7 +1551,7 @@ export default function MineScreen() {
               }
             >
               <ActivityIndicator
-                color="#68a7ff"
+                color={colors.accent}
                 size="small"
               />
 
@@ -1846,7 +1849,7 @@ export default function MineScreen() {
                 }
               >
                 <ActivityIndicator
-                  color="#68a7ff"
+                  color={colors.accent}
                   size="small"
                 />
 
@@ -1955,7 +1958,7 @@ export default function MineScreen() {
                 }
               >
                 <ActivityIndicator
-                  color="#68a7ff"
+                  color={colors.accent}
                   size="small"
                 />
 
@@ -2346,8 +2349,7 @@ export default function MineScreen() {
   );
 }
 
-const styles =
-  StyleSheet.create({
+const prismStyleVariants = createPrismStyleVariants({
     safe: {
       flex: 1,
       backgroundColor: "#060911",

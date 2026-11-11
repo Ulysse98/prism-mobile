@@ -1,3 +1,7 @@
+import * as Clipboard from "expo-clipboard";
+import { PrismAddressQr } from "@/components/PrismAddressQr";
+import { usePrismAppearance } from "@/theme/prism-appearance";
+import { createPrismStyleVariants, usePrismScreenStyles } from "@/theme/prism-screen-styles";
 import { useFocusEffect } from "expo-router";
 import {
   useCallback,
@@ -8,11 +12,13 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  StyleSheet,
+  Share,
   Text,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { WalletV2NetworkCard } from "../../components/WalletV2NetworkCard";
+import { WalletV2SendPreview } from "../../components/WalletV2SendPreview";
 
 import {
   claimFaucet,
@@ -68,6 +74,7 @@ function MetricCard({
   label: string;
   value: string | number;
 }) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   return (
     <View style={styles.metricCard}>
       <Text style={styles.metricValue}>
@@ -82,6 +89,8 @@ function MetricCard({
 }
 
 export default function WalletScreen() {
+  const styles = usePrismScreenStyles(prismStyleVariants);
+  const { colors } = usePrismAppearance();
   const [identity, setIdentity] =
     useState<PrismWallet | null>(null);
 
@@ -110,6 +119,9 @@ export default function WalletScreen() {
   const [error, setError] =
     useState<string | null>(null);
 
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+
   const load =
     useCallback(
       async (
@@ -125,12 +137,12 @@ export default function WalletScreen() {
           const localWallet =
             await getOrCreatePrismWallet();
 
-          const walletSnapshot =
-            await loadWallet(
-              localWallet.address,
-            );
-
+          // Show local identity independently of network state.
           setIdentity(localWallet);
+
+          const walletSnapshot =
+            await loadWallet(localWallet.address);
+
           setSnapshot(walletSnapshot);
           setError(null);
         } catch (err) {
@@ -216,6 +228,32 @@ export default function WalletScreen() {
   const humanityVerified =
     snapshot?.humanityVerified ?? false;
 
+  // One-tap clipboard: ONLY the public address, no seed, secret, or signed payload.
+  const copyPublicAddress = useCallback(async () => {
+    if (!identity?.address) return;
+    try {
+      await Clipboard.setStringAsync(identity.address);
+      setCopied(true);
+    } catch (cause) {
+      setError(walletErrorMessage(cause, "Copie de l'adresse indisponible."));
+    }
+  }, [identity]);
+
+  // Display-only action: share the PUBLIC address, never a secret or signed payload.
+  const sharePublicAddress = useCallback(async () => {
+    if (!identity?.address) return;
+    try {
+      await Share.share({
+        title: "Adresse publique PRISM",
+        message: identity.address,
+      });
+    } catch (cause) {
+      setError(
+        walletErrorMessage(cause, "Partage de l'adresse indisponible."),
+      );
+    }
+  }, [identity]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView
@@ -232,9 +270,9 @@ export default function WalletScreen() {
             onRefresh={() =>
               void load(true)
             }
-            tintColor="#68a7ff"
-            colors={["#68a7ff"]}
-            progressBackgroundColor="#0b101a"
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
           />
         }
       >
@@ -280,7 +318,7 @@ export default function WalletScreen() {
           <View style={styles.loadingCard}>
             <ActivityIndicator
               size="large"
-              color="#68a7ff"
+              color={colors.accent}
             />
 
             <Text style={styles.loadingText}>
@@ -289,32 +327,127 @@ export default function WalletScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.identityCard}>
-              <Text style={styles.cardEyebrow}>
-                ACTIVE ADDRESS
+            <View
+              style={[
+                styles.balanceHero,
+                { backgroundColor: colors.accentSoft, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.balanceTopRow}>
+                <Text style={[styles.balanceEyebrow, { color: colors.accent }]}>
+                  PRISM · DEVNET
+                </Text>
+                <View
+                  style={[
+                    styles.readOnlyBadge,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.readOnlyText, { color: colors.muted }]}>
+                    LECTURE SEULE
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.balanceCaption, { color: colors.muted }]}>
+                Solde disponible
               </Text>
+              <View style={styles.balanceAmountRow}>
+                <Text
+                  style={[styles.balanceAmount, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
+                  {snapshot ? formatNumber(snapshot.availableBalance) : "—"}
+                </Text>
+                <Text style={[styles.balanceUnit, { color: colors.accent }]}>
+                  PRISM
+                </Text>
+              </View>
+              <Text style={[styles.balanceMeta, { color: colors.muted }]}>
+                {snapshot
+                  ? error
+                    ? "Dernier solde connu · connexion à vérifier"
+                    : "Devnet isolé · aucune valeur réelle"
+                  : "Solde indisponible · connexion au nœud requise"}
+              </Text>
+            </View>
 
-              <Text
-                style={styles.address}
-                selectable
-              >
+            <View style={styles.identityCard}>
+              <Text style={styles.cardEyebrow}>ADRESSE PUBLIQUE</Text>
+              <Text style={styles.address} selectable>
                 {identity?.address ?? "?"}
               </Text>
+              <Text style={[styles.addressHint, { color: colors.muted }]}>
+                Adresse publique uniquement · clé privée jamais partagée
+              </Text>
+
+              <View style={styles.addressActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Copier l'adresse publique PRISM"
+                  disabled={!identity?.address}
+                  onPress={() => void copyPublicAddress()}
+                  style={({ pressed }) => [
+                    styles.addressActionButton,
+                    { backgroundColor: colors.accentSoft, borderColor: colors.border },
+                    pressed && styles.addressShareButtonPressed,
+                    !identity && styles.addressShareButtonDisabled,
+                  ]}
+                >
+                  <Text style={[styles.addressActionText, { color: colors.accent }]}>
+                    {copied ? "COPIÉ ✓" : "COPIER"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Partager l'adresse publique PRISM"
+                  disabled={!identity?.address}
+                  onPress={() => void sharePublicAddress()}
+                  style={({ pressed }) => [
+                    styles.addressActionButton,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    pressed && styles.addressShareButtonPressed,
+                    !identity && styles.addressShareButtonDisabled,
+                  ]}
+                >
+                  <Text style={[styles.addressActionText, { color: colors.accent }]}>
+                    PARTAGER
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={showQr ? "Masquer le QR code de réception" : "Afficher le QR code de réception"}
+                  accessibilityState={{ expanded: showQr, disabled: !identity?.address }}
+                  disabled={!identity?.address}
+                  onPress={() => setShowQr((visible) => !visible)}
+                  style={({ pressed }) => [
+                    styles.addressActionButton,
+                    { backgroundColor: showQr ? colors.accentSoft : colors.surface, borderColor: colors.border },
+                    pressed && styles.addressShareButtonPressed,
+                    !identity && styles.addressShareButtonDisabled,
+                  ]}
+                >
+                  <Text style={[styles.addressActionText, { color: colors.accent }]}>
+                    {showQr ? "MASQUER QR" : "QR CODE"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {showQr && identity?.address ? (
+                <View style={styles.qrPanel}>
+                  <Text style={[styles.qrPanelTitle, { color: colors.text }]}>Recevoir sur PRISM Devnet</Text>
+                  <PrismAddressQr address={identity.address} />
+                  <Text style={[styles.qrPanelHint, { color: colors.muted }]}>
+                    Contient uniquement l'adresse publique. Vérifiez le réseau PRISM avant toute utilisation.
+                  </Text>
+                </View>
+              ) : null}
 
               <View style={styles.keyRow}>
-                <Text style={styles.keyLabel}>
-                  PUBLIC KEY
-                </Text>
-
-                <Text
-                  style={styles.keyValue}
-                  selectable
-                >
-                  {identity
-                    ? short(
-                        identity.publicKey,
-                      )
-                    : "?"}
+                <Text style={styles.keyLabel}>PUBLIC KEY</Text>
+                <Text style={styles.keyValue} selectable>
+                  {identity ? short(identity.publicKey) : "?"}
                 </Text>
               </View>
             </View>
@@ -322,36 +455,27 @@ export default function WalletScreen() {
             <View style={styles.metricsGrid}>
               <MetricCard
                 label="TOTAL"
-                value={formatNumber(
-                  snapshot?.totalBalance ??
-                    0,
-                )}
+                value={snapshot ? formatNumber(snapshot.totalBalance) : "—"}
               />
 
               <MetricCard
                 label="AVAILABLE"
-                value={formatNumber(
-                  snapshot
-                    ?.availableBalance ??
-                    0,
-                )}
+                value={snapshot ? formatNumber(snapshot.availableBalance) : "—"}
               />
 
               <MetricCard
                 label="LOCKED STAKE"
-                value={formatNumber(
-                  snapshot?.lockedStake ??
-                    0,
-                )}
+                value={snapshot ? formatNumber(snapshot.lockedStake) : "—"}
               />
 
               <MetricCard
                 label="NONCE"
-                value={formatNumber(
-                  snapshot?.nonce ?? 0,
-                )}
+                value={snapshot ? formatNumber(snapshot.nonce) : "—"}
               />
             </View>
+
+            <WalletV2NetworkCard address={identity?.address ?? null} />
+            <WalletV2SendPreview address={identity?.address ?? null} publicKey={identity?.publicKey ?? null} />
 
             <View style={styles.faucetCard}>
               <Text style={styles.cardEyebrow}>
@@ -418,7 +542,7 @@ export default function WalletScreen() {
               >
                 {claiming ? (
                   <ActivityIndicator
-                    color="#05070c"
+                    color={colors.text}
                   />
                 ) : (
                   <Text
@@ -463,15 +587,15 @@ export default function WalletScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const prismStyleVariants = createPrismStyleVariants({
   safe: {
     flex: 1,
-    backgroundColor: "#05070c",
+    backgroundColor: "#090b17",
   },
 
   container: {
     flex: 1,
-    backgroundColor: "#05070c",
+    backgroundColor: "#090b17",
   },
 
   content: {
@@ -489,7 +613,7 @@ const styles = StyleSheet.create({
   },
 
   eyebrow: {
-    color: "#657086",
+    color: "#bda1e7",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1.6,
@@ -555,11 +679,155 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  balanceHero: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 21,
+    marginBottom: 16,
+  },
+
+  balanceTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  balanceEyebrow: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    flexShrink: 1,
+  },
+
+  readOnlyBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+  },
+
+  readOnlyText: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+
+  balanceCaption: {
+    marginTop: 19,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  balanceAmountRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexWrap: "nowrap",
+    gap: 10,
+    marginTop: 4,
+  },
+
+  balanceAmount: {
+    fontSize: 48,
+    fontWeight: "900",
+    letterSpacing: -1.5,
+    flexShrink: 1,
+    minWidth: 40,
+  },
+
+  balanceUnit: {
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+
+  balanceMeta: {
+    marginTop: 7,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+
+  identityHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  addressShareButton: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  addressShareButtonPressed: {
+    opacity: 0.7,
+  },
+
+  addressShareButtonDisabled: {
+    opacity: 0.4,
+  },
+
+  addressShareText: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+
+  addressHint: {
+    marginTop: 8,
+    fontSize: 10,
+    lineHeight: 15,
+  },
+
+  addressActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
+  },
+
+  addressActionButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minHeight: 42,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  addressActionText: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+
+  qrPanel: {
+    alignItems: "center",
+    marginTop: 18,
+    gap: 12,
+  },
+
+  qrPanelTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  qrPanelHint: {
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: "center",
+  },
+
   identityCard: {
     borderWidth: 1,
-    borderColor: "#1b2639",
+    borderColor: "#393050",
     borderRadius: 20,
-    backgroundColor: "#0b101a",
+    backgroundColor: "#151527",
     padding: 20,
     marginBottom: 16,
   },
@@ -610,9 +878,9 @@ const styles = StyleSheet.create({
     width: "48%",
     flexGrow: 1,
     borderWidth: 1,
-    borderColor: "#1b2639",
+    borderColor: "#39334e",
     borderRadius: 18,
-    backgroundColor: "#0b101a",
+    backgroundColor: "#1b1b30",
     padding: 18,
   },
 

@@ -1,23 +1,29 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
+import { useEffect } from "react";
+import { StatusBar } from "react-native";
+import { usePrismAppearance } from "@/theme/prism-appearance";
 
-const PRISM_BACKGROUND = "#05070c";
-const PRISM_SURFACE = "#10192a";
-const PRISM_TEXT = "#ffffff";
-const PRISM_MUTED = "#657086";
+
 
 export default function AppTabs() {
+  const { colors, scheme } = usePrismAppearance();
+
+  useEffect(() => {
+    StatusBar.setBarStyle(scheme === "dark" ? "light-content" : "dark-content", true);
+  }, [scheme]);
   return (
     <NativeTabs
-      backgroundColor={PRISM_BACKGROUND}
-      indicatorColor={PRISM_SURFACE}
+      backgroundColor={colors.navBackground}
+      indicatorColor={colors.navIndicator}
+      iconColor={{ default: colors.muted, selected: colors.accent }}
       labelStyle={{
         default: {
-          color: PRISM_MUTED,
+          color: colors.muted,
           fontSize: 11,
           fontWeight: "700",
         },
         selected: {
-          color: PRISM_TEXT,
+          color: colors.accent,
           fontSize: 11,
           fontWeight: "900",
         },
@@ -28,21 +34,15 @@ export default function AppTabs() {
           Home
         </NativeTabs.Trigger.Label>
 
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/home.png")}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon sf="house.fill" md="home" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="mine">
         <NativeTabs.Trigger.Label>
-          Mine
+          Compute
         </NativeTabs.Trigger.Label>
 
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/explore.png")}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon sf="cpu" md="memory" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="wallet">
@@ -50,10 +50,7 @@ export default function AppTabs() {
           Wallet
         </NativeTabs.Trigger.Label>
 
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/home.png")}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon sf="wallet.pass.fill" md="account_balance_wallet" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="explore">
@@ -61,10 +58,13 @@ export default function AppTabs() {
           Explore
         </NativeTabs.Trigger.Label>
 
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/explore.png")}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Icon sf="safari.fill" md="explore" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="appearance">
+        <NativeTabs.Trigger.Label>
+          Thème
+        </NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="moon.stars.fill" md="dark_mode" />
       </NativeTabs.Trigger>
     </NativeTabs>
   );
