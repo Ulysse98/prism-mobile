@@ -159,7 +159,8 @@ export default function ReceiptScreen() {
 
     if (
       !receipt?.jobId ||
-      !crossChainReceipt
+      !crossChainReceipt ||
+      !receipt.requester
     ) {
       return;
     }

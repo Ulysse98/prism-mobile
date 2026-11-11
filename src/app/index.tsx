@@ -1,3 +1,5 @@
+import { usePrismAppearance } from "@/theme/prism-appearance";
+import { createPrismStyleVariants, usePrismScreenStyles } from "@/theme/prism-screen-styles";
 import { useFocusEffect } from "expo-router";
 import {
   useCallback,
@@ -7,7 +9,6 @@ import {
 import {
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -59,6 +60,7 @@ function StatusBadge({
 }: {
   mode: ConnectionMode;
 }) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   const text =
     mode === "live"
       ? "LIVE"
@@ -115,6 +117,7 @@ function MetricCard({
     | "gold"
     | "purple";
 }) {
+  const styles = usePrismScreenStyles(prismStyleVariants);
   return (
     <View style={styles.metricCard}>
       <Text
@@ -141,6 +144,8 @@ function MetricCard({
 }
 
 export default function HomeScreen() {
+  const styles = usePrismScreenStyles(prismStyleVariants);
+  const { colors } = usePrismAppearance();
   const [status, setStatus] =
     useState<PrismStatus | null>(
       null,
@@ -340,9 +345,9 @@ export default function HomeScreen() {
             onRefresh={() =>
               void load()
             }
-            tintColor="#68a7ff"
-            colors={["#68a7ff"]}
-            progressBackgroundColor="#0b101a"
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+            progressBackgroundColor={colors.surface}
           />
         }
       >
@@ -369,7 +374,7 @@ export default function HomeScreen() {
                 styles.headerSubtitle
               }
             >
-              Welcome back, Alice
+              Network overview · Alice
             </Text>
           </View>
 
@@ -430,7 +435,7 @@ export default function HomeScreen() {
                   styles.profileEyebrow
                 }
               >
-                ACTIVE IDENTITY
+                NETWORK PARTICIPANT
               </Text>
 
               <Text
@@ -1479,16 +1484,15 @@ export default function HomeScreen() {
   );
 }
 
-const styles =
-  StyleSheet.create({
+const prismStyleVariants = createPrismStyleVariants({
     safe: {
       flex: 1,
-      backgroundColor: "#05070c",
+      backgroundColor: "#090b17",
     },
 
     container: {
       flex: 1,
-      backgroundColor: "#05070c",
+      backgroundColor: "#090b17",
     },
 
     content: {
@@ -1507,7 +1511,7 @@ const styles =
     },
 
     headerEyebrow: {
-      color: "#58677f",
+      color: "#bda1e7",
       fontSize: 9,
       fontWeight: "900",
       letterSpacing: 1.8,
@@ -1522,7 +1526,7 @@ const styles =
     },
 
     headerSubtitle: {
-      color: "#6c7a90",
+      color: "#a9a9bf",
       fontSize: 12,
       marginTop: 3,
     },
@@ -1611,9 +1615,9 @@ const styles =
     profileHero: {
       padding: 18,
       borderRadius: 20,
-      backgroundColor: "#0b101a",
+      backgroundColor: "#151527",
       borderWidth: 1,
-      borderColor: "#1b2639",
+      borderColor: "#393050",
     },
 
     profileTop: {
@@ -1688,13 +1692,13 @@ const styles =
       marginTop: 17,
       padding: 17,
       borderRadius: 15,
-      backgroundColor: "#08160f",
+      backgroundColor: "#1b1730",
       borderWidth: 1,
-      borderColor: "#15462f",
+      borderColor: "#56417c",
     },
 
     earningsLabel: {
-      color: "#5e9476",
+      color: "#c6a9ed",
       fontSize: 8,
       fontWeight: "900",
       letterSpacing: 1.3,
@@ -1708,20 +1712,20 @@ const styles =
     },
 
     earningsValue: {
-      color: "#69e7a1",
+      color: "#e3d4ff",
       fontSize: 38,
       fontWeight: "900",
       letterSpacing: -1,
     },
 
     earningsUnit: {
-      color: "#65ad84",
+      color: "#9ccfe2",
       fontSize: 12,
       fontWeight: "900",
     },
 
     earningsMeta: {
-      color: "#688374",
+      color: "#aaa5c2",
       fontSize: 10,
       marginTop: 4,
     },
@@ -1739,9 +1743,9 @@ const styles =
       justifyContent: "center",
       paddingHorizontal: 5,
       borderRadius: 13,
-      backgroundColor: "#0e1522",
+      backgroundColor: "#1b1b30",
       borderWidth: 1,
-      borderColor: "#17243b",
+      borderColor: "#39334e",
     },
 
     metricValue: {
@@ -1772,7 +1776,7 @@ const styles =
     },
 
     purple: {
-      color: "#aaaefe",
+      color: "#c69cff",
     },
 
     muted: {
