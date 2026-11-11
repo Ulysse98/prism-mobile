@@ -241,4 +241,3 @@ const prismStyleVariants = createPrismStyleVariants({
   historyTitle: { color: "#ece5fb", fontSize: 12 },
   footer: { color: "#978cae", marginTop: 16, fontSize: 10 },
 });
-
